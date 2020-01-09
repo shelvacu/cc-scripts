@@ -1,0 +1,20 @@
+local y=0
+function up()
+  if turtle.up() then
+    y=y+1
+  end
+end
+
+function down()
+  if turtle.down() then
+    y=y-1
+  end
+end
+
+for i=1,128 do
+  turtle.placeUp()
+  up()
+end
+while not (y==0) do
+  down()
+end

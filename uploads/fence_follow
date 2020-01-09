@@ -1,0 +1,104 @@
+--0: north, 1: east, 2: south, 3: west
+local facing
+
+local targs = { ... }
+if #targs ~= 1 then
+  print( "needs one parameter, direction" )
+end
+
+if targs[1] == "north" or targs[1] == "n" then
+  facing = 0
+elseif targs[1] == "east" or targs[1] == "e" then
+  facing = 1
+elseif targs[1] == "south" or targs[1] == "s" then
+  facing = 2
+elseif targs[1] == "west" or targs[1] == "w" then
+  facing = 3
+else
+  print( "unrecognized direction" )
+  return
+end
+
+local numtoname = {
+  [0] = "north"; -- neg Z
+  [1] = "east"; -- pos X
+  [2] = "south"; -- pos Z
+  [3] = "west" -- neg X
+}
+
+local x = 0
+local y = 0
+local z = 0
+
+local function forward()
+  if turtle.forward() then
+    if facing == 0 then
+      z = z - 1
+    elseif facing == 1 then
+      x = x + 1
+    elseif facing == 2 then
+      z = z + 1
+    elseif facing == 3 then
+      x = x - 1
+    else
+      print( "FUCK" )
+    end
+    return true
+  else
+    return false
+  end
+end
+
+local function turnLeft()
+  if turtle.turnLeft() then
+    facing = math.fmod(facing+3,4)
+    return true
+  else
+    return false
+  end
+end
+
+local function turnRight()
+  if turtle.turnRight() then
+    facing = math.fmod(facing+1,4)
+    return true
+  else
+    return false
+  end
+end
+
+while true do
+  local success, bi = turtle.inspectUp()
+  if success and bi.name == "minecraft:birch_fence" then
+    print("facing")
+    print(facing)
+    print(math.fmod(facing+1, 4))
+    print(numtoname[math.fmod(facing+1, 4)])
+    if bi.state[numtoname[math.fmod(facing+3,4)]] then
+      turnLeft()
+    elseif bi.state[numtoname[facing]] then
+      --do nothing, go straight
+    elseif bi.state[numtoname[math.fmod(facing+1, 4)]] then
+      turnRight()
+    elseif bi.state[numtoname[math.fmod(facing+2, 4)]] then
+      turnRight()
+      turnRight()
+    else
+      print("not pointing anywheres")
+    end
+  end
+  if turtle.detect() then
+    turtle.dig()
+  end
+    
+  forward()
+  
+  if x == 0 and y == 0 and z == 0 then
+    print("done")
+    break
+  end
+  if false then
+    print( "debig")
+    break
+  end
+end

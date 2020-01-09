@@ -1,0 +1,74 @@
+local y = 0
+local height = 19
+local function up()
+  while not turtle.up() do
+  end
+  y=y+1
+end
+local function down()
+  while not turtle.down() do
+  end
+  y=y-1
+end
+
+while true do
+  print("fetching water")
+  --go get some water
+  turtle.turnRight()
+  turtle.forward()
+  turtle.forward()
+  down()
+  turtle.turnLeft()
+  turtle.forward()
+  for sel=1,16 do
+    turtle.select(sel)
+    while true do
+      local bi = turtle.getItemDetail(sel)
+      if not bi or bi.count == 0 then
+        print("err!")
+        return
+      elseif bi.name == "minecraft:water_bucket" then
+        break
+      elseif bi.name == "minecraft:bucket" then
+        turtle.placeDown()
+      else
+        print("err!2")
+        return
+      end
+    end
+  end
+  turtle.back()
+  turtle.turnRight()
+  up()
+  turtle.back()
+  turtle.back()
+  turtle.turnLeft()
+  for i=1,height do
+    local suc,bi = turtle.inspectUp()
+    local issource = suc and bi.metadata == 0
+    if issource and y == 0 then
+      print("fin")
+      return
+    elseif issource then
+      break
+    else
+      print("i is " .. i .. " y is " .. y)
+      up()
+    end
+  end
+  for sel=1,16 do
+    if y == 0 then
+      print("y is 0, done")
+      return
+    end
+    turtle.select(sel)
+    print("selected " .. sel)
+    down()
+    turtle.placeUp()
+  end
+  print("all buckets placed, y is " .. y)
+  while not (y == 0) do
+    print("going down, y is " .. y)
+    down()
+  end
+end

@@ -1,0 +1,86 @@
+local norths = 11
+local easts  = 11
+
+local doDigUp = false
+local doDigDown = false
+
+local x = 0 -- +east
+local z = 0 -- +south
+
+local facing = 0
+
+local function digUp()
+  if doDigUp then
+    turtle.digUp()
+  end
+end
+
+local function digDown()
+  if doDigDown then
+    turtle.digDown()
+  end
+end
+
+local function forward()
+  if turtle.forward() then
+    if facing == 0 then
+      z = z - 1
+    elseif facing == 1 then
+      x = x + 1
+    elseif facing == 2 then
+      z = z + 1
+    elseif facing == 3 then
+      x = x - 1
+    end
+  end
+end
+
+local function turnLeft()
+  if turtle.turnLeft() then
+    facing = math.fmod(facing + 3, 4)
+  end
+end
+
+local function turnRight()
+  if turtle.turnRight() then
+    facing = math.fmod(facing + 1, 4)
+  end
+end
+
+local done = false
+
+while not done do
+  while true do
+    digDown()
+    digUp()
+    if z == -norths then
+      break
+    end
+    turtle.dig()
+    forward()
+  end
+  if x == easts then
+    break
+  end
+  turnRight()
+  turtle.dig()
+  forward()
+  digUp()
+  digDown()
+  turnRight()
+  turtle.dig()
+  forward()
+  while true do
+    digUp()
+    digDown()
+    if z == 0 then
+      break
+    end
+    turtle.dig()
+    forward()
+  end
+  turnLeft()
+  turtle.dig()
+  forward()
+  turnLeft()
+end

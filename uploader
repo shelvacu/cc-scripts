@@ -1,0 +1,24 @@
+local tArgs = { ... }
+if not #tArgs == 1 then
+  print("exactly one argument expected")
+  return
+end
+
+local sFile = tArgs[1]
+local sPath = shell.resolve( sFile )
+
+if not fs.exists( sPath ) or fs.isDir( sPath ) then
+  print( "file no exist" )
+  return
+end
+
+local sName = fs.getName( sPath )
+local file = fs.open( sPath, "r" )
+local sText = file.readAll()
+file.close()
+
+local response = http.post("http://10.4.5.17:4567/" .. sFile, sText)
+
+if response then
+  print("yay")
+end

@@ -1,0 +1,160 @@
+local function fail( errMsg )
+  print( errMsg )
+  print( "looping forever..." )
+  while true do
+    sleep(1)
+  end
+end
+
+local function ensurefuel()
+  if turtle.getFuelLevel() == 0 then
+    print("fuel me")
+    while not turtle.refuel() do
+      sleep(1)
+    end
+    print("fueled")
+  end
+end
+
+local function forward()
+  ensurefuel()
+  turtle.forward()
+end
+
+local function turnright()
+  ensurefuel()
+  turtle.turnRight()
+end
+
+local function turnleft()
+  ensurefuel()
+  turtle.turnLeft()
+end
+
+local function oneeighty()
+  turnleft()
+  turnleft()
+end
+
+local function up()
+  ensurefuel()
+  turtle.up()
+end
+
+local function down()
+  ensurefuel()
+  turtle.down()
+end
+
+--true: There are items remaining in turtle's inventory
+local function depositall()
+  turtle.select(1)
+  local empty = true
+  while true do 
+    while turtle.getItemCount() == 0 do
+      if turtle.getSelectedSlot() == 16 then
+        return empty
+      end
+      turtle.select(turtle.getSelectedSlot() + 1)
+    end
+    turtle.drop()
+    if turtle.getItemCount() > 0 then
+      empty = false
+    end
+  end
+end
+  
+local function multichestdeposit()
+  --start from sitting on the andesite, or in front of a wall
+  while not turtle.detect() do
+    forward()
+    forward()
+    turnleft()
+    if not depositall() then
+      turnleft()
+      return
+    end
+    up()
+    if not depositall() then
+      turnleft()
+      down()
+      return
+    end
+    oneeighty()
+    if not depositall() then
+      turnright()
+      down()
+      return
+    end
+    down()
+    if not depositall() then
+      turnright()
+      return
+    end
+    turnleft()
+  end
+  oneeighty()
+end
+
+local function inventoryfull()
+  local i = 1
+  while i <= 16 do
+    if turtle.getItemCount(i) == 0 then
+      return false
+    end
+    i = i + 1
+  end
+  return true
+end
+
+local done = false
+while not done do
+  --facing towards quarry, above chest
+  while not inventoryfull() do
+    if not turtle.suckDown() then
+      sleep(1)
+    end
+  end
+  
+  oneeighty()
+  --facing chests
+  while not turtle.detect() do
+    forward()
+  end
+  --near/above-ish chests
+  down()
+  down()
+  --should be above diorite
+  local success, blockbelow = turtle.inspectDown()
+  if not (success and blockbelow.name == "minecraft:stone" and blockbelow.state.variant == "diorite") then
+    print("unexpected block")
+    print(success)
+    print(blockbelow)
+    fail("")
+  end
+  
+  multichestdeposit() 
+  --we're somewhere in the chests, facing towards the quarry
+  while true do
+    local success, bi = turtle.inspectDown()
+    if success and bi.state.variant == "diorite" then
+      break;
+    end
+    forward()
+  end
+  
+  --we're on the diorite near the chests
+  up()
+  up()
+  while true do
+    local success, bi = turtle.inspectDown()
+    if success and bi.state.variant == "diorite" then
+      break
+    end
+    forward()
+  end
+  --and more time to get to the chest
+  forward()
+
+  print("finished a transfer")
+end

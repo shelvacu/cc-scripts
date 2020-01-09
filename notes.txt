@@ -1,0 +1,122 @@
+pastebin get 0hUKaXKe gambit_miner
+
+offset pattern - 41%
+
+very regular - 4/9 = 44%
+
+n0 -Z
+e1 +X
+s2 +Z
+w3 -X
+
+offset 0
+  -z
+-x  +x
+  +z
+offset 1
+  -x
++z  -z
+  +x
+offset 2
+  +z
++x  -x
+  -z
+offset 3
+  +x
+-z  +z
+  -x
+
+api: http.post(url, data)
+wget http://10.4.5.17:4567/uploader u
+
+info.state.east
+
+dig: snnTRcBm
+ladderup: 80kbaxaB
+mine_w_sand: xKWGp1MH
+back_from_water: EtqmPBMi
+ladderify: qSXqxSiD
+removewater: GF5E0giX
+tower: jzyH95pj
+watertower: UeLCtWTd
+chest_transfwer: m3uHyZt3
+
+plant: 8y1483QN
+harvest: eaYcyULd
+
+dig_fwd:
+
+inspects:
+
+fully-grown wheat:
+{
+  state = {
+    age = 7
+  },
+  name = "minecraft:wheat",
+  metadata = 7,
+}
+
+double-chest:
+{
+  state = {
+    facing = "west",
+  },
+  name = "miencraft:chest",
+  metadata = 4,
+}
+
+running water:
+{
+  state = {
+    level = 8,
+  },
+  name = "minecraft:water",
+  metadata = 8,
+}
+
+water source:
+{
+  state = {
+    level = 0,
+  },
+  name = "minecraft:water",
+  metadata = 0,
+}
+
+inventory items:
+
+empty bucket:
+{
+  count = 1,
+  name = "minecraft:bucket",
+  damage = 0,
+}
+
+full water bucket:
+{
+  count = 1,
+  name = "minecraft:water_bucket",
+  damage = 0,
+}
+
+spawn:
+-248 252
+-249 251
+
+spawn chunk (middle): -16 x 15
+spawn chunks:
+-25 x  6
+ -7 x 24
+
+
+dock:
+-251 63 311
+
+cows!:
+200 73 880 (wayyyyy far away)
+
+digto 198 72 883
+
+
+water temple thing -902 62 241

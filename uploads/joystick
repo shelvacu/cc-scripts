@@ -1,0 +1,14 @@
+while true do
+  local cmd = read()
+  if cmd == "w" then
+    turtle.forward()
+  elseif cmd == "s" then
+    turtle.back()
+  elseif cmd == "a" then
+    turtle.turnLeft()
+  elseif cmd == "d" then
+    turtle.turnRight()
+  else
+    print("?")
+  end
+end

@@ -1,0 +1,6 @@
+turtle.back()
+turtle.turnRight()
+turtle.up()
+turtle.back()
+turtle.back()
+turtle.turnLeft()

@@ -1,0 +1,24 @@
+local function place()
+  if turtle.getItemCount() == 0 then
+    turtle.select(turtle.getSelectedSlot()+1)
+  end
+  turtle.place()
+end
+turtle.select(1)
+for bla=1,128 do
+  turtle.up()
+  if not turtle.detect() then
+    turtle.turnLeft()
+    place()
+    turtle.turnLeft()
+    place()
+    turtle.turnLeft()
+    place()
+    turtle.turnLeft()
+    place()
+  end
+end
+
+for bla=1,128 do
+  turtle.down()
+end  

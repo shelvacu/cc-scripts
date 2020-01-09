@@ -1,0 +1,138 @@
+{ "crystal_clear_design_project":
+  { "name": "",
+    "version": "0.0.2",
+    "macros": {},
+    "convenience": {"zoomAmount":-0.199999999999999,"panPos":[-678.2162475585938,96.70672607421875]},
+    "state_machines": [
+      { "name": "new state machine 1",
+        "window": [[5,9],[89,75]],
+        "states": [
+          { "window": [[25,1],[32,24]],
+            "name": "startPos",
+            "states": [
+              { "window": [[4,1],[10,6]],
+                "name": "waiting",
+                "states": [
+                ]
+              },
+              { "window": [[4,21],[10,6]],
+                "name": "deposit",
+                "states": [
+                ]
+              },
+              { "window": [[13,1],[5,3]],
+                "name": "queryItem",
+                "states": [
+                ]
+              },
+              { "window": [[13,9],[6,3]],
+                "name": "itemList",
+                "states": [
+                ]
+              },
+              { "window": [[19,1],[14,3]],
+                "name": "queryQuantity",
+                "states": [
+                ]
+              },
+              { "window": [[15,21],[8,2]],
+                "name": "itemInfo",
+                "states": [
+                ]
+              },
+              { "window": [[1,7],[0,0]],
+                "name": "start",
+                "states": [
+                ]
+              }
+            ]
+          },
+          { "window": [[29,35],[12,6]],
+            "name": "moving to chest",
+            "states": [
+            ]
+          },
+          { "window": [[40,35],[12,6]],
+            "name": "reached destination",
+            "entry": "do the deposit/withdrawl",
+            "states": [
+            ]
+          }
+        ],
+        "transitions": [
+          { "source": ["startPos/waiting","right",2],
+            "destination": ["startPos/deposit","left",2],
+            "path": [[6,11]],
+            "condition": "deposit"
+          },
+          { "source": ["startPos/deposit","bottom",1],
+            "destination": ["startPos/itemInfo","top",1],
+            "path": [],
+            "condition": "unrecognized item"
+          },
+          { "source": ["startPos/itemInfo","top",6],
+            "destination": ["startPos/deposit","bottom",6],
+            "path": [],
+            "condition": "commit changes"
+          },
+          { "source": ["startPos/deposit","right",2],
+            "destination": ["moving to chest","left",2],
+            "path": [],
+            "condition": "commit"
+          },
+          { "source": ["moving to chest","bottom",2],
+            "destination": ["reached destination","top",2],
+            "path": [],
+            "condition": "arrived"
+          },
+          { "source": ["reached destination","right",2],
+            "destination": ["startPos/waiting","top",8],
+            "path": [[42,49],[27,49],[27,10]]
+          },
+          { "source": ["startPos/waiting","bottom",1],
+            "destination": ["startPos/queryItem","top",1],
+            "path": [],
+            "condition": "withdraw"
+          },
+          { "source": ["startPos/queryItem","right",2],
+            "destination": ["startPos/itemList","left",2],
+            "path": [],
+            "condition": "multiple"
+          },
+          { "source": ["startPos/queryItem","right",1],
+            "destination": ["startPos/queryItem","top",2],
+            "path": [[1,6],[-1,6],[-1,2]],
+            "condition": "zero"
+          },
+          { "source": ["startPos/queryItem","bottom",1],
+            "destination": ["startPos/queryQuantity","top",1],
+            "path": [],
+            "condition": "single"
+          },
+          { "source": ["startPos/itemList","bottom",1],
+            "destination": ["startPos/queryQuantity","top",9],
+            "path": [],
+            "condition": "commit"
+          },
+          { "source": ["startPos/start","top",0],
+            "destination": ["startPos/waiting","top",6],
+            "path": []
+          },
+          { "source": ["startPos","left",2],
+            "destination": ["startPos/waiting","top",4],
+            "path": [[2,5]],
+            "condition": "cancel"
+          },
+          { "source": ["startPos/queryQuantity","right",1],
+            "destination": ["moving to chest","left",3],
+            "path": [[45,34],[32,34]],
+            "condition": "commit"
+          }
+        ]
+      }
+    ],
+    "events": [
+    ],
+    "settings": {"time_counts_per_tick":1000,"max_key_used":28}
+  }
+}
