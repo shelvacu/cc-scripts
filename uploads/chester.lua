@@ -192,6 +192,86 @@ end
 
 local params = af.read("db/params")
 
+-- this code just pretends back() doesn't exist, lol
+local function moveTo(spot, verticalFirst)
+  if verticalFirst then
+    while true do
+      local glob = globalPostion()
+      if glob.y < spot.y then
+        up()
+      elseif glob.y > spot.y then
+        down()
+      else
+        break
+      end
+    end
+  end
+  local dirs = {}
+  if spot.x > glob.x then
+    dirs.x = 1
+  elseif spot.x < glob.x then
+    dirs.x = 3
+  else
+    dirs.x = nil
+  end
+  if spot.z > glob.z then
+    dirs.z = 2
+  elseif spot.z < glob.z then
+    dirs.z = 0
+  else
+    dirs.z = nil
+  end
+
+  local glob = globalPosition()
+  if dirs.x or dirs.z then
+    if dirs.x and dirs.z then
+      local a
+      if math.fmod(glob.facing, 2) == 0 then --north or south
+        if glob.facing == dirs.z then
+          a = "z"
+        else
+          a = "x"
+        end
+      else --west or east
+        if glob.facing == dirs.x then
+          a = "x"
+        else
+          a = "z"
+        end
+      end
+      turnToFace(dirs[a])
+      while spot[a] ~= globalPosition()[a] do
+        forward()
+      end
+      dirs[a] = nil
+    end
+    local a
+    if dirs.x then
+      a = "x"
+    else
+      a = "z"
+    end
+    turnToFace(dirs[a])
+    while spot[a] ~= globalPosition()[a] do
+      forward()
+    end
+  end
+
+  if not verticalFirst then
+    while true do
+      local glob = globalPostion()
+      if glob.y < spot.y then
+        up()
+      elseif glob.y > spot.y then
+        down()
+      else
+        break
+      end
+    end
+  end
+  turnToFace(spot.facing)
+end
+
 local function walRecover()
   local wal = af.read("db/wal")
   if not wal.empty then
@@ -301,6 +381,8 @@ local function walRecover()
   end
 end
 
+walRecover()
+
 --local chestCheckTimer = os.startTimer(1)
 
 local function clear()
@@ -318,21 +400,24 @@ local stateMachine = {
 }
 
 function stateMachine:s_startPos(ev, key)
-  if ev == "key" and key == keys.period then
+  if ev == "start" then
+    self:s_startPos_waiting("start")
+  elseif ev == "key" and key == keys.period then
     self:s_startPos_waiting("start")
   end
 end
 
 function stateMachine:s_startPos_waiting(ev, key, ...)
   if ev == "start" then
-    self:currState = self:s_startPos_waiting
+    self.currState = self.s_startPos_waiting
     clear()
     print("[d]eposit")
     print("[w]ithdraw")
   elseif ev == "key" and key == keys.d then
     self:s_startPos_deposit("start")
   elseif ev == "key" and key == keys.w then
-    self:s_startPos_queryItem("start")
+    die("not implemented")
+    --self:s_startPos_queryItem("start")
   else
     self:s_startPos(ev, key, ...)
   end
@@ -344,61 +429,104 @@ function stateMachine:s_forEvery(ev, key, ...)
     --self.v_forEvery.idx = 1
     for slot=1,16 do
       local turtleItemInfo = turtle.getItemDetail(slot)
-      if turtleItemInfo then
-        local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
-        local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
-        local chestIdx = nil
-        local stackSize
-        local hasNBT
-        if itemInfo.damageDiffers then
-          stackSize = itemCInfo.stackSize
-          hasNBT = itemCInfo.hasNBT
-        else
-          stackSize = itemInfo.stackSize
-          hasNBT = itemInfo.hasNBT
-        end
-        local maxCount = 9 * 3 * stackSize
-        local chestLocation
-        local chestCountBefore
-        if not hasNBT then
-          for i, val in ipairs(itemCInfo.chests) do
-            --todo: potentially split a deposit into multiple pieces
-            if val.count + turtleItemInfo.count <= maxCount then
-              chestLocation = val.location
-              chestCountBefore = val.count
-              break
-            end
+      if not turtleItemInfo then
+        break
+      end
+      local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
+      local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
+      local chestIdx = nil
+      local stackSize
+      local hasNBT
+      if itemInfo.damageDiffers then
+        stackSize = itemCInfo.stackSize
+        hasNBT = itemCInfo.hasNBT
+      else
+        stackSize = itemInfo.stackSize
+        hasNBT = itemInfo.hasNBT
+      end
+      local maxCount = 9 * 3 * stackSize
+      local customName = nil
+      if hasNBT then
+        customName = self.slotName[slot]
+      end
+      local chestLocation
+      local chestCountBefore
+      if not hasNBT then
+        for i, val in ipairs(itemCInfo.chests) do
+          --todo: potentially split a deposit into multiple pieces
+          if val.count + turtleItemInfo.count <= maxCount then
+            chestLocation = val.location
+            chestCountBefore = val.count
+            break
           end
         end
-        if not chestLocation then
-          local emptys = af.read("empty_chests")
-          if #emptys == 0 then
-            error("no chests available!")
-          end
-          chestLocation = emptys[1].location
-          chestCountBefore = 0
+      end
+      if not chestLocation then
+        local emptys = af.read("empty_chests")
+        if #emptys == 0 then
+          error("no chests available!")
         end
-        local destLocation = {
-          y = chestLocation.y
-        }
-        local bound = boundingBox(params)
-        if chestLocation.x == bound.lne.x then
-          destLocation.x = chestLocation.x + 1
-          destLocation.z = chestLocation.z
-          destLocation.facing = 3 --west, -x
-        elseif chestLocation.z == bound.lne.z then
-          destLocation.x = chestLocation.x
-          destLocation.z = chestLocation.z + 1
-          destLocation.facing = 0 --north, -z
-        else
-          destLocation.x = chestLocation.x - 1
-          destLocation.z = chestLocation.z
-          destLocation.facing = 1 --east, +x
+        chestLocation = emptys[1].location
+        chestCountBefore = 0
+      end
+      local destLocation = {
+        y = chestLocation.y
+      }
+      local bound = boundingBox(params)
+      if chestLocation.x == bound.lne.x then
+        destLocation.x = chestLocation.x + 1
+        destLocation.z = chestLocation.z
+        destLocation.facing = 3 --west, -x
+      elseif chestLocation.z == bound.lne.z then
+        destLocation.x = chestLocation.x
+        destLocation.z = chestLocation.z + 1
+        destLocation.facing = 0 --north, -z
+      else
+        destLocation.x = chestLocation.x - 1
+        destLocation.z = chestLocation.z
+        destLocation.facing = 1 --east, +x
+      end
+      moveTo(destLocation, false)
+      --oh my god, we did it
+      --we're in front of the chest, ready.
+      --about to deposit the master's glorious items.
+      --stack of cobblestone #7,853 may you be deposited well
+      --in today and in tommorow, forever organized
+      --for our master
+      --amen
+      local wal = {
+        type = "deposit",
+        location = globalPosition(),
+        name = turtleItemInfo.name,
+        damage = turtleItemInfo.damage,
+        slot = slot,
+        chestCountBefore = chestCountBefore,
+        customName = customName,
+        empty = false
+      }
+      af.write("db/wal", wal)
+      -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing it normally, so...
+      walRecover()
+      while true do
+        local glob = globalLocation()
+        if glob.y == params.startingPos.y then
+          break
+        elseif glob.y > params.startingPos.y then
+          down()
+        elseif glob.y < params.startingPos.y then
+          up()
         end
+      end
+    end
+    moveTo(params.startingPos)
+    self:s_startPos("start")
+  end
+end
+      
    
 function stateMachine:s_startPos_deposit(ev, key, ...)
   if ev == "start" then
-    self:currState = self:s_startPos_deposit
+    self.currState = self.s_startPos_deposit
     clear()
     print("Place your items in the inventory, and fill out the information when prompted. Press d again when done.")
     local haveEverySlotInfo, _ = self:checkInv()
@@ -526,7 +654,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
   local info = self.v_startPos.v_itemInfo.info
   local selIdx = self.v_startPos.v_itemInfo.selectedIdx
   if ev == "start" then
-    self:currState = self:s_startPos_itemInfo
+    self.currState = self.s_startPos_itemInfo
     clear()
     local haveEverySlotInfo, slotsInfo = self:checkInv()
     if haveEverySlotInfo then

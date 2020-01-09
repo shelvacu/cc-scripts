@@ -259,6 +259,27 @@ function globalPosition()
   return globalPos
 end
 
+function turnToFace(newFacing, preferLeft = true)
+  local glob = globalPosition()
+  local f = glob.facing
+  local mod = math.fmod((newFacing - f) + 4, 4)
+  if mod == 0 then
+    --do nothing
+  elseif mod == 1 then
+    turnRight()
+  elseif mod == 2 then
+    if preferLeft then
+      turnLeft()
+      turnLeft()
+    else
+      turnRight()
+      turnRight()
+    end
+  elseif mod == 3 then
+    turnLeft()
+  end
+end
+
 StringToFacing = {
   n = 0,
   e = 1,
