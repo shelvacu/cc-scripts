@@ -68,17 +68,22 @@
 --   * write /items/<name>/<damage>.c
 --   * write WAL finished
 
-local tArgs = { ... }
-
-if #tArgs == 0 then
-   print("Usage:")
-   print("  chester startup")
-   print("  chester init <forwards> <rights> <downs>")
-end
-
 require "shellib"
 Settings.ensureFuel = true
 local af = require "atomicFile"
+
+local stateMachine = {
+  v_startPos = {
+    v_itemInfo = {}
+  },
+  v_forEvery = {},
+  slotNames = {}
+}
+
+local function clear()
+  term.clear()
+  term.setCursorPos(1,1)
+end
 
 local function boundingBox(params)
   local startingPos = params.startingPos
@@ -113,84 +118,9 @@ local function boundingBox(params)
   return res
 end
 
-if tArgs[1] == "init" then
-  if not targs[4] then
-    print("3 arguments required for 'init' (4 total)")
-    return
-  end
-  local forwards = tonumber(tArgs[2])
-  local rights = tonumber(tArgs[3])
-  local downs = tonumber(tArgs[4])
-  if not (forwards and rights and downs) then
-    print("all arguments must be numbers")
-    return
-  end
-
-  --local startX, startY, startZ = gps.locate(5, true)
-  print("attempting to determine global offset")
-  if not getGlobalOffset(nil, 5, true) then
-    print("could not get gps coordinates")
-    return
-  end
-
-  local startingPos = globalPosition()
-
-  fs.makeDir("db")
-  fs.makeDir("db/items")
-  fs.makedir("db/chests")
-
-  local emptyChests = {}
-  for f=0,forwards-1 do
-    for r=0,rights-1 do
-      if math.fmod(f+r, 2) == 0 then --checkerboard pattern of chests
-        for d=1,downs do
-          local x,y,z
-          if startingPos.facing == 0 then
-            z = -f
-            x =  r
-          elseif startingPos.facing == 1 then
-            z = r
-            x = f
-          elseif startingPos.facing == 2 then
-            z = f
-            x = -r
-          elseif startingPos.facing == 3 then
-            z = -r
-            x = f
-          end
-          y = -d
-          local chestInfo = {count = 0, location = {x = x, y = y, z = z}}
-          af.write("db/chests/"..x..","..y..","..z, chestInfo)
-          --emptyChests[#emptyChests + 1] = chestInfo
-          table.insert(emptyChests, chestInfo)
-        end
-      end
-    end
-  end
-
-  af.write("db/empty_chests", emptyChests)
-  af.write("db/wal", {empty = true})
-  local params = {
-    startingPos = startingPos,
-    forwards = forwards,
-    rights = rights,
-    downs = downs
-  }
-  af.write("db/params", params)
-  print("Init finished.")
-  return
-elseif tArgs[1] ~= "startup" then
-  print("Unknown subcommand "..tArgs[1])
-  return
-end
-
 local function locationEq(a, b)
   return a.x == b.x and a.y == b.y and a.z == b.z and a.facing == b.facing
 end
-
--- tArgs[1] == "startup"
-
-local params = af.read("db/params")
 
 -- this code just pretends back() doesn't exist, lol
 local function moveTo(spot, verticalFirst)
@@ -381,23 +311,109 @@ local function walRecover()
   end
 end
 
-walRecover()
-
---local chestCheckTimer = os.startTimer(1)
-
-local function clear()
-  term.clear()
-  term.setCursorPos(1,1)
+local function bool2str(b,y = "y", n = "n")
+  if b then
+    return y
+  else
+    return n
+  end
 end
 
---local stateMachine = { currState = {"startPos", "waiting"} }
-local stateMachine = {
-  v_startPos = {
-    v_itemInfo = {}
-  },
-  v_forEvery = {},
-  slotNames = {}
-}
+local function printItemInfo(info, selected = nil)
+  print(info.name)
+  print(bool2str(selected==0,">"," ") .. "[commit]"
+  print(bool2str(selected==1,">"," ") .. "stackSize:     " .. info.stackSize)
+  print(bool2str(selected==2,">"," ") .. "hasNBT:        " .. bool2str(info.hasNBT))
+  print(bool2str(selected==3,">"," ") .. "damageDiffers: " .. bool2str(info.damageDiffers))
+  local idx = 4
+  if info.damageDiffers then
+    print(info.name .. " d" .. info.damage)
+    -- 4
+    print(bool2str(selected==idx,">"," ") .. "hasNBT:        " .. bool2str(info.damageInfo.hasNBT))
+    idx = idx + 1
+    -- 5
+    print(bool2str(selected==idx,">"," ") .. "stackSize:     " .. bool2str(info.damageInfo.stackSize))
+    idx = idx + 1
+  end
+  if customName(info) then
+    --4 or 6
+    print(bool2str(selected==idx,">"," ") .. "customName:    " .. info.customName)
+    idx = idx + 1
+  end
+end
+
+local function selectionsCount(info)
+  local count = 4
+  if info.damageDiffers then
+    count = count + 2
+  end
+  if customName(info) then
+    count = count + 1
+  end
+  return count
+end
+
+local function customName(info)
+  if (info.damageDiffers and info.damageInfo.hasNBT) or ((not info.damageDiffers) and info.hasNBT) then
+    if info.damageDiffers then
+      return 6
+    else
+      return 4
+    end
+  else
+    return nil
+  end
+end
+
+local function isNumeralKeyCode(key)
+  return false or
+    key == keys.zero or
+    key == keys.one or
+    key == keys.two or
+    key == keys.three or
+    key == keys.four or
+    key == keys.five or
+    key == keys.six or
+    key == keys.seven or
+    key == keys.eight or
+    key == keys.nine or
+    key == keys.numPad0 or
+    key == keys.numPad1 or
+    key == keys.numPad2 or
+    key == keys.numPad3 or
+    key == keys.numPad4 or
+    key == keys.numPad5 or
+    key == keys.numPad6 or
+    key == keys.numPad7 or
+    key == keys.numPad8 or
+    key == keys.numPad9
+end
+
+local function getCharFromNumeralKeyCode(key)
+  if key == keys.zero or key == keys.numPad0 then
+    return "0"
+  elseif key == keys.one or key == keys.numPad1 then
+    return "1"
+  elseif key == keys.two or key == keys.numPad2 then
+    return "2"
+  elseif key == keys.three or key == keys.numPad3 then
+    return "3"
+  elseif key == keys.four or key == keys.numPad4 then
+    return "4"
+  elseif key == keys.five or key == keys.numPad5 then
+    return "5"
+  elseif key == keys.six or key == keys.numPad6 then
+    return "6"
+  elseif key == keys.seven or key == keys.numPad7 then
+    return "7"
+  elseif key == keys.eight or key == keys.numPad8 then
+    return "8"
+  elseif key == keys.nine or key == keys.numPad9 then
+    return "9"
+  else
+    return nil
+  end
+end
 
 function stateMachine:s_startPos(ev, key)
   if ev == "start" then
@@ -543,110 +559,6 @@ function stateMachine:s_startPos_deposit(ev, key, ...)
     return self:s_forEvery("start")
   else
     return self:s_startPos(ev, key, ...)
-  end
-end
-
-local function bool2str(b,y = "y", n = "n")
-  if b then
-    return y
-  else
-    return n
-  end
-end
-
-local function printItemInfo(info, selected = nil)
-  print(info.name)
-  print(bool2str(selected==0,">"," ") .. "[commit]"
-  print(bool2str(selected==1,">"," ") .. "stackSize:     " .. info.stackSize)
-  print(bool2str(selected==2,">"," ") .. "hasNBT:        " .. bool2str(info.hasNBT))
-  print(bool2str(selected==3,">"," ") .. "damageDiffers: " .. bool2str(info.damageDiffers))
-  local idx = 4
-  if info.damageDiffers then
-    print(info.name .. " d" .. info.damage)
-    -- 4
-    print(bool2str(selected==idx,">"," ") .. "hasNBT:        " .. bool2str(info.damageInfo.hasNBT))
-    idx = idx + 1
-    -- 5
-    print(bool2str(selected==idx,">"," ") .. "stackSize:     " .. bool2str(info.damageInfo.stackSize))
-    idx = idx + 1
-  end
-  if customName(info) then
-    --4 or 6
-    print(bool2str(selected==idx,">"," ") .. "customName:    " .. info.customName)
-    idx = idx + 1
-  end
-end
-
-local function selectionsCount(info)
-  local count = 4
-  if info.damageDiffers then
-    count = count + 2
-  end
-  if customName(info) then
-    count = count + 1
-  end
-  return count
-end
-
-local function customName(info)
-  if (info.damageDiffers and info.damageInfo.hasNBT) or ((not info.damageDiffers) and info.hasNBT) then
-    if info.damageDiffers then
-      return 6
-    else
-      return 4
-    end
-  else
-    return nil
-  end
-end
-
-local function isNumeralKeyCode(key)
-  return false or
-    key == keys.zero or
-    key == keys.one or
-    key == keys.two or
-    key == keys.three or
-    key == keys.four or
-    key == keys.five or
-    key == keys.six or
-    key == keys.seven or
-    key == keys.eight or
-    key == keys.nine or
-    key == keys.numPad0 or
-    key == keys.numPad1 or
-    key == keys.numPad2 or
-    key == keys.numPad3 or
-    key == keys.numPad4 or
-    key == keys.numPad5 or
-    key == keys.numPad6 or
-    key == keys.numPad7 or
-    key == keys.numPad8 or
-    key == keys.numPad9
-end
-
-local function getCharFromNumeralKeyCode(key)
-  if key == keys.zero or key == keys.numPad0 then
-    return "0"
-  elseif key == keys.one or key == keys.numPad1 then
-    return "1"
-  elseif key == keys.two or key == keys.numPad2 then
-    return "2"
-  elseif key == keys.three or key == keys.numPad3 then
-    return "3"
-  elseif key == keys.four or key == keys.numPad4 then
-    return "4"
-  elseif key == keys.five or key == keys.numPad5 then
-    return "5"
-  elseif key == keys.six or key == keys.numPad6 then
-    return "6"
-  elseif key == keys.seven or key == keys.numPad7 then
-    return "7"
-  elseif key == keys.eight or key == keys.numPad8 then
-    return "8"
-  elseif key == keys.nine or key == keys.numPad9 then
-    return "9"
-  else
-    return nil
   end
 end
 
@@ -808,7 +720,102 @@ function stateMachine:checkInv()
   return res, haveEverySlotInfo
 end
         
-        
+
+
+
+local tArgs = { ... }
+
+if #tArgs == 0 then
+   print("Usage:")
+   print("  chester startup")
+   print("  chester init <forwards> <rights> <downs>")
+end
+
+if tArgs[1] == "init" then
+  if not targs[4] then
+    print("3 arguments required for 'init' (4 total)")
+    return
+  end
+  local forwards = tonumber(tArgs[2])
+  local rights = tonumber(tArgs[3])
+  local downs = tonumber(tArgs[4])
+  if not (forwards and rights and downs) then
+    print("all arguments must be numbers")
+    return
+  end
+
+  --local startX, startY, startZ = gps.locate(5, true)
+  print("attempting to determine global offset")
+  if not getGlobalOffset(nil, 5, true) then
+    print("could not get gps coordinates")
+    return
+  end
+
+  local startingPos = globalPosition()
+
+  fs.makeDir("db")
+  fs.makeDir("db/items")
+  fs.makedir("db/chests")
+
+  local emptyChests = {}
+  for f=0,forwards-1 do
+    for r=0,rights-1 do
+      if math.fmod(f+r, 2) == 0 then --checkerboard pattern of chests
+        for d=1,downs do
+          local x,y,z
+          if startingPos.facing == 0 then
+            z = -f
+            x =  r
+          elseif startingPos.facing == 1 then
+            z = r
+            x = f
+          elseif startingPos.facing == 2 then
+            z = f
+            x = -r
+          elseif startingPos.facing == 3 then
+            z = -r
+            x = f
+          end
+          y = -d
+          local chestInfo = {count = 0, location = {x = x, y = y, z = z}}
+          af.write("db/chests/"..x..","..y..","..z, chestInfo)
+          --emptyChests[#emptyChests + 1] = chestInfo
+          table.insert(emptyChests, chestInfo)
+        end
+      end
+    end
+  end
+
+  af.write("db/empty_chests", emptyChests)
+  af.write("db/wal", {empty = true})
+  local params = {
+    startingPos = startingPos,
+    forwards = forwards,
+    rights = rights,
+    downs = downs
+  }
+  af.write("db/params", params)
+  print("Init finished.")
+  return
+elseif tArgs[1] ~= "startup" then
+  print("Unknown subcommand "..tArgs[1])
+  return
+end
+
+-- tArgs[1] == "startup"
+
+local params = af.read("db/params")
+
+walRecover()
+
+-- todo: return to spot maybe
+
+local _, yPos, _ = gps.locate(10)
+if not yPos then
+  die("cant gps")
+end
+
+local diff = params.startingPos.y - yPos
 
 stateMachine:startPos_waiting("start")
 while true do

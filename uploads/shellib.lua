@@ -205,7 +205,9 @@ function getGlobalOffset(facing = nil, timeout = 2, gps_debug = false)
   end
   local first = {x = xPos, y = yPos, z = zPos}
   if not facing then
-    forward()
+    if not tryForward() then
+      return false
+    end
     local xPos, yPos, zPos = gps.locate(timeout, gps_debug)
     back()
     local second = {x = xPos, y = yPos, z = zPos}
