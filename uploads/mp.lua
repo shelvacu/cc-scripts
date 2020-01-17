@@ -6,6 +6,7 @@ local function isInt(n)
   return math.floor(n) == n and n < 2^64 and -(2^63) < n
 end
 
+--[[
 local hexChars = {
   "0",
   "1",
@@ -25,7 +26,6 @@ local hexChars = {
   "f",
 }
 
---[[
 function hexDump(data)
   local res = ""
   for i=1,#data do
@@ -40,7 +40,7 @@ end
 
 local mp = {}
 
-local function messagePack(val)
+local function messagePackImpl(val)
   local ty = type(val)
   if ty == "number" then
     if isInt(val) then
@@ -133,7 +133,7 @@ local function messagePack(val)
     else
       error("string too long! " .. len .. " bytes!")
     end
-    return prefix .. val
+    return prefix, val
   elseif ty == "table" then
     if val[1] then --assume array-like table
       local len = #val
@@ -151,23 +151,24 @@ local function messagePack(val)
           bit.band(len, 0xff)
         )
       end
-      local res = prefix
+      --local res = prefix
+      local res = {}
       iters = 0
       for idx, val in ipairs(val) do
-        res = res .. messagePack(val)
+        res[iters+1] = messagePackImpl(val)
         iters = iters + 1
       end
       if iters ~= len then
         error("malformed array-like table")
       end
-      return res
+      return prefix, table.unpack(res)
     else -- assume hashmap-like table
       local len = 0
       local prefix
-      local res = ""
+      local res = {} 
       for k,v in pairs(val) do
-        res = res .. messagePack(k)
-        res = res .. messagePack(v)
+        res[len*2 + 1] = messagePackImpl(k)
+        res[len*2 + 2] = messagePackImpl(v)
         len = len + 1
       end
       if len <= 15 then
@@ -183,12 +184,15 @@ local function messagePack(val)
           bit.band(len, 0xff)
         )
       end
-      res = prefix .. res
-      return res
+      return prefix, table.unpack(res)
     end
   else
     error("cannot pack data type "..ty)
   end
+end
+
+local function messagePack(data)
+  return table.concat({messagePackImpl(data)})
 end
 
 mp.pack = messagePack
