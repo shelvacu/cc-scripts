@@ -6,7 +6,13 @@ local function isInt(n)
   return math.floor(n) == n and n < 2^64 and -(2^63) < n
 end
 
---[[
+-- modifies `t1` in place
+local function appendArray(t1, t2) -- chapter 32 of "why doesn't lua have this?"
+  for i=1,#t2 do
+    t1[#t1+1] = t2[i]
+  end
+end
+-- [[
 local hexChars = {
   "0",
   "1",
@@ -36,7 +42,7 @@ function hexDump(data)
   end
   return res
 end
---]]
+-- ]]
 
 local mp = {}
 
@@ -155,7 +161,7 @@ local function messagePackImpl(val)
       local res = {}
       iters = 0
       for idx, val in ipairs(val) do
-        res[iters+1] = messagePackImpl(val)
+        appendArray(res, {messagePackImpl(val)})
         iters = iters + 1
       end
       if iters ~= len then
@@ -167,8 +173,8 @@ local function messagePackImpl(val)
       local prefix
       local res = {} 
       for k,v in pairs(val) do
-        res[len*2 + 1] = messagePackImpl(k)
-        res[len*2 + 2] = messagePackImpl(v)
+        appendArray(res, {messagePackImpl(k)})
+        appendArray(res, {messagePackImpl(v)})
         len = len + 1
       end
       if len <= 15 then
@@ -196,6 +202,9 @@ local function messagePack(data)
 end
 
 mp.pack = messagePack
+mp.messagePackImpl = messagePackImpl --for debugging
+
+local messageUnpack = nil
 
 local function unpack8(data)
   if #data < 1 then
@@ -280,7 +289,7 @@ local function signed(unsigned, bits)
   end
 end
 
-local function messageUnpack(data)
+messageUnpack = function(data)
   local remaining = data
   local first = string.byte(string.sub(data, 1, 1))
   if not first then
@@ -371,12 +380,12 @@ local function messageUnpack(data)
     local len
     len, remaining = unpack16(remaining)
     if not remaining then return end
-    return unpackArr(len, remaining)
+    return unpackArray(len, remaining)
   elseif first == 0xdd then
     local len
     len, remaining = unpack32(remaining)
     if not remaining then return end
-    return unpackArr(len, remaining)
+    return unpackArray(len, remaining)
   elseif first == 0xde then
     local len
     len, remaining = unpack16(remaining)
