@@ -7,25 +7,30 @@ function ends_with(str, ending)
 end
 
 function die(msg)
-  print("ERROR: "..msg)
+  error("ERROR: "..msg)
   while true do
     sleep(1)
   end
 end
 
+if not backupTurtle then
+  backupTurtle = turtle
+end
+turtle = {}
 local s = "Use shellib"
-local turtleForward = turtle.forward
+local turtleForward = backupTurtle.forward
 turtle.forward = s
-local turtleBack = turtle.back
+local turtleBack = backupTurtle.back
 turtle.back = s
-local turtleUp = turtle.up
+local turtleUp = backupTurtle.up
 turtle.up = s
-local turtleDown = turtle.down
+local turtleDown = backupTurtle.down
 turtle.down = s
-local turtleTurnLeft = turtle.turnLeft
+local turtleTurnLeft = backupTurtle.turnLeft
 turtle.turnLeft = s
-local turtleTurnRight = turtle.turnRight
+local turtleTurnRight = backupTurtle.turnRight
 turtle.turnRight = s
+setmetatable(turtle, {__index = backupTurtle})
 
 Location = {x = 0, y = 0, z = 0, facing = 0}
 GlobalOffset = {known = false, posPairs = {}}
@@ -46,7 +51,7 @@ function tryForward()
     elseif f == 3 then
       Location.x = Location.x - 1
     else
-      die("unexpect Location.facing value")
+      error("unexpect Location.facing value")
     end
   end
   return res
@@ -54,7 +59,7 @@ end
 
 function forward()
   if not tryForward() then
-    die("unable to move forward")
+    error("unable to move forward")
   end
 end
 
@@ -72,7 +77,7 @@ function tryBack()
     elseif f == 3 then
       Location.x = Location.x + 1
     else
-      die("unexpect Location.facing value")
+      error("unexpect Location.facing value")
     end
   end
   return res
@@ -80,7 +85,7 @@ end
 
 function back()
   if not tryBack() then
-    die("unable to move back")
+    error("unable to move back")
   end
 end
 
@@ -95,7 +100,7 @@ end
 
 function up()
   if not tryUp() then
-    die("unable to move up")
+   error("unable to move up")
   end
 end
 
@@ -110,13 +115,13 @@ end
 
 function down()
   if not tryDown() then
-    die("unable to move down")
+    error("unable to move down")
   end
 end
 
 function ensureFuel()
   if turtle.getFuelLevel() == 0 then
-    die("need fuel!")
+    error("need fuel!")
   end
 end
 
@@ -156,8 +161,9 @@ local function translatePosition(facingOffset)
     translatedLocation.x =  Location.z
     translatedLocation.z = -Location.x
   else
-    die("unexpected offset")
+   error("unexpected offset")
   end
+  return translatedLocation
 end
 
 local function locationEq(a, b)
@@ -165,7 +171,9 @@ local function locationEq(a, b)
 end
 
 -- returns bool success
-function recordPositionPair(timeout = 2, gps_debug = false)
+function recordPositionPair(timeout, gps_debug)
+  local timeout = timeout or 2
+  local gps_debug = gps_debug or false
   if GlobalOffset.known then
     return true
   end
@@ -195,7 +203,9 @@ end
 -- Params: facing (optional)
 --   if not provided, will try to move the turtle forward to get a second reading
 -- Returns: boolean indicating success
-function getGlobalOffset(facing = nil, timeout = 2, gps_debug = false)
+function getGlobalOffset(facing, timeout, gps_debug)
+  local timeout = timeout or 2
+  local gps_debug = gps_debug or false
   if GlobalOffset.known then
     return true
   end
@@ -217,7 +227,7 @@ function getGlobalOffset(facing = nil, timeout = 2, gps_debug = false)
     
     local globalFacing
     if first.y ~= second.y then
-      die("expected y coordinate to stay the same")
+      error("expected y coordinate to stay the same")
     elseif (first.z - 1) == second.z and first.x == second.x then
       globalFacing = 0
     elseif (first.x + 1) == second.x and first.z == second.z then
@@ -227,7 +237,7 @@ function getGlobalOffset(facing = nil, timeout = 2, gps_debug = false)
     elseif (first.x - 1) == second.x and first.z == second.z then
       globalFacing = 3
     else
-      die("unexpected coordinates")
+      error("unexpected coordinates")
     end
     facing = globalFacing
   end
@@ -247,13 +257,13 @@ end
 --caller must ensure getGlobalOffset has been called and returned true before calling this
 function globalPosition()
   if not GlobalOffset.known then
-    die("Global offset not known")
+    error("Global offset not known")
   end
   
-  local translatedLocation = translatePosition(facingOffset)
+  local translatedLocation = translatePosition(GlobalOffset.facing)
   local globalPos = {}
 
-  globalPos.facing = math.fmod(Location.facing + GlobalOffset.facing)
+  globalPos.facing = math.fmod(Location.facing + GlobalOffset.facing, 4)
   globalPos.x = translatedLocation.x + GlobalOffset.x
   globalPos.y = translatedLocation.y + GlobalOffset.y
   globalPos.z = translatedLocation.z + GlobalOffset.z
@@ -261,7 +271,10 @@ function globalPosition()
   return globalPos
 end
 
-function turnToFace(newFacing, preferLeft = true)
+function turnToFace(newFacing, preferLeft)
+  if type(preferLeft) == "nil" then
+    preferLeft = true
+  end
   local glob = globalPosition()
   local f = glob.facing
   local mod = math.fmod((newFacing - f) + 4, 4)

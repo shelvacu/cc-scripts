@@ -29,7 +29,7 @@ local function readAll(file)
 end
 
 -- Returns whether there were any files needing recovery
-local function exports.recover(name)
+function exports.recover(name)
   local oldName = name .. exports.oldPostfix
   local newName = name .. exports.newPostfix
   if fs.exists(newName) then
@@ -47,7 +47,7 @@ local function exports.recover(name)
   return false
 end
     
-local function exports.write(name, data)
+function exports.write(name, data)
   local rawData = mp.pack(data)
   local oldName = name .. exports.oldPostfix
   local newName = name .. exports.newPostfix
@@ -60,7 +60,7 @@ local function exports.write(name, data)
   return true
 end
 
-local function exports.read(name)
+function exports.read(name)
   local oldName = name .. exports.oldPostfix
   exports.recover(name)
   local data, remaining = mp.unpack(readAll(oldName))

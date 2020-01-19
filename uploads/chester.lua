@@ -80,6 +80,7 @@ local stateMachine = {
   slotNames = {}
 }
 
+local params
 local function clear()
   term.clear()
   term.setCursorPos(1,1)
@@ -106,13 +107,13 @@ local function boundingBox(params)
   end
   local res = {}
   res.lnw = { --lower north-west corner
-    x = math.min(x, startingPos.x)
-    y = math.min(y, startingPos.y - 1)
+    x = math.min(x, startingPos.x),
+    y = math.min(y, startingPos.y - 1),
     z = math.min(z, startingPos.z)
   }
   res.use = { --upper south-east corner
-    x = math.max(x, startingPos.x)
-    y = math.max(y, startingPos.y - 1)
+    x = math.max(x, startingPos.x),
+    y = math.max(y, startingPos.y - 1),
     z = math.max(z, startingPos.z)
   }
   return res
@@ -213,7 +214,7 @@ local function walRecover()
         turtle.drop(wal.count)
       end
       local chestInfo
-      if fs.exist(chestFn) then
+      if fs.exists(chestFn) then
         chestInfo = af.read(chestFn)
       else
         error("Chest does not exist!")
@@ -228,7 +229,7 @@ local function walRecover()
         end
         af.write(chestFn, chestInfo)
       end
-      if not fs.exist(itemCFn) then
+      if not fs.exists(itemCFn) then
         error("ItemCInfo does not exist")
       end
       local itemCInfo = af.read(itemCFn)
@@ -311,7 +312,21 @@ local function walRecover()
   end
 end
 
-local function bool2str(b,y = "y", n = "n")
+local function customName(info)
+  if (info.damageDiffers and info.damageInfo.hasNBT) or ((not info.damageDiffers) and info.hasNBT) then
+    if info.damageDiffers then
+      return 6
+    else
+      return 4
+    end
+  else
+    return nil
+  end
+end
+
+local function bool2str(b, y, n)
+  local y = y or "y"
+  local n = n or "n"
   if b then
     return y
   else
@@ -319,9 +334,9 @@ local function bool2str(b,y = "y", n = "n")
   end
 end
 
-local function printItemInfo(info, selected = nil)
+local function printItemInfo(info, selected)
   print(info.name)
-  print(bool2str(selected==0,">"," ") .. "[commit]"
+  print(bool2str(selected==0,">"," ") .. "[commit]")
   print(bool2str(selected==1,">"," ") .. "stackSize:     " .. info.stackSize)
   print(bool2str(selected==2,">"," ") .. "hasNBT:        " .. bool2str(info.hasNBT))
   print(bool2str(selected==3,">"," ") .. "damageDiffers: " .. bool2str(info.damageDiffers))
@@ -351,18 +366,6 @@ local function selectionsCount(info)
     count = count + 1
   end
   return count
-end
-
-local function customName(info)
-  if (info.damageDiffers and info.damageInfo.hasNBT) or ((not info.damageDiffers) and info.hasNBT) then
-    if info.damageDiffers then
-      return 6
-    else
-      return 4
-    end
-  else
-    return nil
-  end
 end
 
 local function isNumeralKeyCode(key)
@@ -434,6 +437,26 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
   elseif ev == "key" and key == keys.w then
     die("not implemented")
     --self:s_startPos_queryItem("start")
+  elseif ev == "turtle_inventory" then
+    local haveEvery, itemInfos = self:checkInv()
+    if not haveEvery then
+      turnLeft()
+      for idx, info in ipairs(itemInfos) do
+        if info.empty or info.haveAllInfo then
+          --no dothing
+        else
+          turtle.select(idx)
+          turtle.drop()
+        end
+      end
+    end
+    if self.autoInvTimer then
+      os.cancelTimer(self.autoInvTimer)
+    end
+    os.autoInvTimer = os.startTimer(2)
+  elseif ev == "timer" and key == os.autoInvTimer then
+    os.autoInvTimer = nil
+    self:s_forEvery("start")
   else
     self:s_startPos(ev, key, ...)
   end
@@ -441,7 +464,7 @@ end
 
 function stateMachine:s_forEvery(ev, key, ...)
   if ev == "start" then
-    self:currState = self:s_forEvery
+    self.currState = self.s_forEvery
     --self.v_forEvery.idx = 1
     for slot=1,16 do
       local turtleItemInfo = turtle.getItemDetail(slot)
@@ -521,7 +544,7 @@ function stateMachine:s_forEvery(ev, key, ...)
         empty = false
       }
       af.write("db/wal", wal)
-      -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing it normally, so...
+      -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
       walRecover()
       while true do
         local glob = globalLocation()
@@ -588,7 +611,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
     info.hasNBT = false
     info.damageDiffers = false
     info.damageInfo = {
-      hasNBT = false
+      hasNBT = false,
       stackSize = info.stackSize
     }
     self.v_startPos.v_itemInfo.info = info
@@ -648,7 +671,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
       self.slotNames[slot] = nil
     end
     local cInfo
-    if fs.exist(itemCInfoFn) then
+    if fs.exists(itemCInfoFn) then
       cInfo = af.read(itemFInfoFn)
     else
       cInfo = {info = {}, chests = {}}
@@ -686,14 +709,18 @@ function stateMachine:checkInv()
     res[slot] = {haveAllInfo = false}
     local deets = turtle.getItemDetail(slot)
     if deets then
+      --print("checking item "..slot)
+      --print("deets are")
+      --print(deets)
       local itemInfoFn  = "db/items/" .. deets.name .. ".i"
       local itemCInfoFn = "db/items/" .. deets.name .. "/" .. deets.damage .. ".c"
-      res[slot].empty = ( deets.count == 0 )
-      if fs.exist(itemInfoFn) then
+      res[slot].empty = (deets.count == 0)
+      res[slot].damage = deets.damage
+      if fs.exists(itemInfoFn) then
         local itemInfo = af.read(itemInfoFn)
         res[slot] = itemInfo
         if itemInfo.damageDiffers then
-          if not fs.exist(itemCInfoFn) then
+          if not fs.exists(itemCInfoFn) then
             res[slot].haveAllInfo = false
           else
             local itemCInfo = af.read(itemCInfoFn)
@@ -712,12 +739,14 @@ function stateMachine:checkInv()
           end
         end
       end
+      print("haveallinfo: " .. bool2str(res[slot].haveAllInfo))
     else
       res[slot].empty = true
     end
-    haveEverySlotInfo = haveEverySlotInfo && ( res[slot].empty || res[slot].haveAllInfo )
+    haveEverySlotInfo = haveEverySlotInfo and ( res[slot].empty or res[slot].haveAllInfo )
   end
-  return res, haveEverySlotInfo
+  print("haveevery: "..bool2str(haveEverySlotInfo))
+  return haveEverySlotInfo, res
 end
         
 
@@ -729,10 +758,11 @@ if #tArgs == 0 then
    print("Usage:")
    print("  chester startup")
    print("  chester init <forwards> <rights> <downs>")
+   return
 end
 
 if tArgs[1] == "init" then
-  if not targs[4] then
+  if not tArgs[4] then
     print("3 arguments required for 'init' (4 total)")
     return
   end
@@ -755,7 +785,7 @@ if tArgs[1] == "init" then
 
   fs.makeDir("db")
   fs.makeDir("db/items")
-  fs.makedir("db/chests")
+  fs.makeDir("db/chests")
 
   local emptyChests = {}
   for f=0,forwards-1 do
@@ -798,13 +828,13 @@ if tArgs[1] == "init" then
   print("Init finished.")
   return
 elseif tArgs[1] ~= "startup" then
-  print("Unknown subcommand "..tArgs[1])
+  print("Unknown subcommand "..(tArgs[1] or ""))
   return
 end
 
 -- tArgs[1] == "startup"
 
-local params = af.read("db/params")
+params = af.read("db/params")
 
 walRecover()
 
@@ -817,8 +847,9 @@ end
 
 local diff = params.startingPos.y - yPos
 
-stateMachine:startPos_waiting("start")
+stateMachine:s_startPos_waiting("start")
 while true do
   local ev, r1, r2, r3, r4, r5 = os.pullEvent()
 
-  if currState[1] == "at start position" and ev == "key" and r1 == keys.period then
+  stateMachine:currState(ev, r1, r2, r3, r4, r5)
+end
