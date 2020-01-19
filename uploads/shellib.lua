@@ -7,7 +7,7 @@ function ends_with(str, ending)
 end
 
 function die(msg)
-  error("ERROR: "..msg)
+  error("ERROR: "..(msg or "unspecified error"))
   while true do
     sleep(1)
   end
@@ -242,7 +242,10 @@ function getGlobalOffset(facing, timeout, gps_debug)
     facing = globalFacing
   end
 
+  assert(facing)
+  assert(Location.facing)
   local facingOffset = math.fmod((facing - Location.facing) + 4, 4)
+  assert(facingOffset)
   GlobalOffset.facing = facingOffset
 
   local translatedLocation = translatePosition(facingOffset)
@@ -259,6 +262,8 @@ function globalPosition()
   if not GlobalOffset.known then
     error("Global offset not known")
   end
+  assert(GlobalOffset.facing)
+  assert(Location.facing)
   
   local translatedLocation = translatePosition(GlobalOffset.facing)
   local globalPos = {}

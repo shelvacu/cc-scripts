@@ -28,6 +28,14 @@ local function readAll(file)
   return content
 end
 
+function exports.exists(name)
+  local oldName = name .. exports.oldPostfix
+  local newName = name .. exports.newPostfix
+  return fs.exists(oldName) or fs.exists(newName)
+end
+
+exports.exist = exports.exists
+  
 -- Returns whether there were any files needing recovery
 function exports.recover(name)
   local oldName = name .. exports.oldPostfix

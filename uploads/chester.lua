@@ -68,6 +68,11 @@
 --   * write /items/<name>/<damage>.c
 --   * write WAL finished
 
+--[[
+local debug = dofile"cooldebug.lua"
+debug.override()
+--]]
+
 require "shellib"
 Settings.ensureFuel = true
 local af = require "atomicFile"
@@ -108,12 +113,12 @@ local function boundingBox(params)
   local res = {}
   res.lnw = { --lower north-west corner
     x = math.min(x, startingPos.x),
-    y = math.min(y, startingPos.y - 1),
+    y = startingPos.y - (1 + params.downs),
     z = math.min(z, startingPos.z)
   }
   res.use = { --upper south-east corner
     x = math.max(x, startingPos.x),
-    y = math.max(y, startingPos.y - 1),
+    y = startingPos.y - 1,
     z = math.max(z, startingPos.z)
   }
   return res
@@ -127,7 +132,7 @@ end
 local function moveTo(spot, verticalFirst)
   if verticalFirst then
     while true do
-      local glob = globalPostion()
+      local glob = globalPosition()
       if glob.y < spot.y then
         up()
       elseif glob.y > spot.y then
@@ -137,6 +142,7 @@ local function moveTo(spot, verticalFirst)
       end
     end
   end
+  local glob = globalPosition()
   local dirs = {}
   if spot.x > glob.x then
     dirs.x = 1
@@ -153,7 +159,6 @@ local function moveTo(spot, verticalFirst)
     dirs.z = nil
   end
 
-  local glob = globalPosition()
   if dirs.x or dirs.z then
     if dirs.x and dirs.z then
       local a
@@ -190,7 +195,7 @@ local function moveTo(spot, verticalFirst)
 
   if not verticalFirst then
     while true do
-      local glob = globalPostion()
+      local glob = globalPosition()
       if glob.y < spot.y then
         up()
       elseif glob.y > spot.y then
@@ -214,7 +219,7 @@ local function walRecover()
         turtle.drop(wal.count)
       end
       local chestInfo
-      if fs.exists(chestFn) then
+      if af.exists(chestFn) then
         chestInfo = af.read(chestFn)
       else
         error("Chest does not exist!")
@@ -229,7 +234,7 @@ local function walRecover()
         end
         af.write(chestFn, chestInfo)
       end
-      if not fs.exists(itemCFn) then
+      if not af.exists(itemCFn) then
         error("ItemCInfo does not exist")
       end
       local itemCInfo = af.read(itemCFn)
@@ -347,7 +352,7 @@ local function printItemInfo(info, selected)
     print(bool2str(selected==idx,">"," ") .. "hasNBT:        " .. bool2str(info.damageInfo.hasNBT))
     idx = idx + 1
     -- 5
-    print(bool2str(selected==idx,">"," ") .. "stackSize:     " .. bool2str(info.damageInfo.stackSize))
+    print(bool2str(selected==idx,">"," ") .. "stackSize:     " .. info.damageInfo.stackSize)
     idx = idx + 1
   end
   if customName(info) then
@@ -501,7 +506,7 @@ function stateMachine:s_forEvery(ev, key, ...)
         end
       end
       if not chestLocation then
-        local emptys = af.read("empty_chests")
+        local emptys = af.read("db/empty_chests")
         if #emptys == 0 then
           error("no chests available!")
         end
@@ -512,11 +517,11 @@ function stateMachine:s_forEvery(ev, key, ...)
         y = chestLocation.y
       }
       local bound = boundingBox(params)
-      if chestLocation.x == bound.lne.x then
+      if chestLocation.x == bound.lnw.x then
         destLocation.x = chestLocation.x + 1
         destLocation.z = chestLocation.z
         destLocation.facing = 3 --west, -x
-      elseif chestLocation.z == bound.lne.z then
+      elseif chestLocation.z == bound.lnw.z then
         destLocation.x = chestLocation.x
         destLocation.z = chestLocation.z + 1
         destLocation.facing = 0 --north, -z
@@ -607,6 +612,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
       damage = slotsInfo[idx].damage,
       customName = ""
     }
+    assert(info.damage)
     info.stackSize = turtle.getItemCount(idx) + turtle.getItemSpace(idx)
     info.hasNBT = false
     info.damageDiffers = false
@@ -621,6 +627,8 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
   elseif ev == "key" and key == keys.backspace then
     if selIdx == 1 then
       info.stackSize = tonumber(string.sub((info.stackSize) .. "", 1, -2)) or 0
+    elseif selIdx == 5 then
+      info.damageInfo.stackSize = tonumber(string.sub((info.damageInfo.stackSize).."", 1, -2)) or 0
     elseif customName(info) == selIdx then
       info.customName = string.sub(info.customName, 1, -2)
     else
@@ -671,7 +679,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
       self.slotNames[slot] = nil
     end
     local cInfo
-    if fs.exists(itemCInfoFn) then
+    if af.exists(itemCInfoFn) then
       cInfo = af.read(itemFInfoFn)
     else
       cInfo = {info = {}, chests = {}}
@@ -715,12 +723,13 @@ function stateMachine:checkInv()
       local itemInfoFn  = "db/items/" .. deets.name .. ".i"
       local itemCInfoFn = "db/items/" .. deets.name .. "/" .. deets.damage .. ".c"
       res[slot].empty = (deets.count == 0)
+      res[slot].name = deets.name
       res[slot].damage = deets.damage
-      if fs.exists(itemInfoFn) then
+      if af.exists(itemInfoFn) then
         local itemInfo = af.read(itemInfoFn)
         res[slot] = itemInfo
         if itemInfo.damageDiffers then
-          if not fs.exists(itemCInfoFn) then
+          if not af.exists(itemCInfoFn) then
             res[slot].haveAllInfo = false
           else
             local itemCInfo = af.read(itemCInfoFn)
@@ -845,7 +854,13 @@ if not yPos then
   die("cant gps")
 end
 
-local diff = params.startingPos.y - yPos
+while yPos + Location.y < params.startingPos.y do
+  up()
+end
+
+getGlobalOffset()
+
+moveTo(params.startingPos)
 
 stateMachine:s_startPos_waiting("start")
 while true do
