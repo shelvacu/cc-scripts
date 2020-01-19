@@ -642,10 +642,8 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
     print(inspect(slotsInfo[idx]))
     assert(info.damage)
     info.stackSize = turtle.getItemCount(idx) + turtle.getItemSpace(idx)
-    info.hasNBT = false
-    info.damageDiffers = false
     info.damageInfo = {
-      hasNBT = false,
+      hasNBT = info.hasNBT,
       stackSize = info.stackSize
     }
     self.v_startPos.v_itemInfo.info = info
