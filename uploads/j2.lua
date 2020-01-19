@@ -36,7 +36,7 @@ while true do
     print(inspect({turtle.inspectUp()}))
   elseif key == "k" then
     print(inspect({turtle.inspect()}))
-  elseif key == "m" then
+  elseif key == "m" or key == "," then
     print(inspect({turtle.inspectDown()}))
   elseif key == "j" then
     print(inspect(turtle.getItemDetail()))

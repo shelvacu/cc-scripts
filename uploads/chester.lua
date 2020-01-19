@@ -25,7 +25,7 @@
 -- /items/minecraft:stone/
 -- /items/minecraft:stone/5.c - {info: itemSpecificDamageInfo, chests: arr of chestInfos with andesite in them and how many}
 -- /chests/
--- /chests/5,-1,4 - {count: int, location: {x,y,z}, name: id|nil, damage: int|nil, customName: string|nil}. If the chest doesn't exist, no file should exist. Coordinates relative, and can be negative. Same ordering as minecraft, and so y should always be negative
+-- /chests/5,-1,4 - {count: int, location: {x,y,z}, name: id|nil, damage: int|nil, customName: string|nil}. If the chest doesn't exist, no file should exist. Coordinates are not relative, they are absolute and can be negative. Same ordering as minecraft.
 -- /empty_chests - list of empty chestInfo's
 -- /wal - write ahead log
 -- /params - various things like starting position, size/boundaries, etc
@@ -74,6 +74,7 @@ debug.override()
 --]]
 
 require "shellib"
+local inspect = require"inspect"
 Settings.ensureFuel = true
 local af = require "atomicFile"
 
@@ -128,8 +129,16 @@ local function locationEq(a, b)
   return a.x == b.x and a.y == b.y and a.z == b.z and a.facing == b.facing
 end
 
+local function locationAddInto(a, b)
+  a.x = a.x + b.x
+  a.y = a.y + b.y
+  a.z = a.z + b.z
+end
+
 -- this code just pretends back() doesn't exist, lol
 local function moveTo(spot, verticalFirst)
+  print("moving to ")--.. spot.x .. "," .. spot.y .. "," .. spot.z)
+  print(inspect({spot, verticalFirst}))
   if verticalFirst then
     while true do
       local glob = globalPosition()
@@ -239,14 +248,24 @@ local function walRecover()
       end
       local itemCInfo = af.read(itemCFn)
       local modified = false
+      local found = false
       for i, ci in ipairs(itemCInfo.chests) do
-        if
-          locationEq(ci.location, wal.location) and
-          ci.count == wal.chestCountBefore
-        then
-          ci.count = ci.count + wal.count
-          modified = true
+        if locationEq(ci.location, wal.location) then
+          found = true
+          if ci.count == wal.chestCountBefore then
+            ci.count = ci.count + wal.count
+            modified = true
+          end
         end
+      end
+      if not found then
+        local chestInfo = {
+          count = wal.count,
+          location = wal.location,
+          customName = wal.customName
+        }
+        itemCInfo.chests[#itemCInfo.chests + 1] = chestInfo
+        modified = true
       end
       if modified then
         af.write(itemCFn, itemCInfo)
@@ -482,8 +501,8 @@ function stateMachine:s_forEvery(ev, key, ...)
       local stackSize
       local hasNBT
       if itemInfo.damageDiffers then
-        stackSize = itemCInfo.stackSize
-        hasNBT = itemCInfo.hasNBT
+        stackSize = itemCInfo.info.stackSize
+        hasNBT = itemCInfo.info.hasNBT
       else
         stackSize = itemInfo.stackSize
         hasNBT = itemInfo.hasNBT
@@ -491,7 +510,7 @@ function stateMachine:s_forEvery(ev, key, ...)
       local maxCount = 9 * 3 * stackSize
       local customName = nil
       if hasNBT then
-        customName = self.slotName[slot]
+        customName = self.slotNames[slot]
       end
       local chestLocation
       local chestCountBefore
@@ -530,6 +549,7 @@ function stateMachine:s_forEvery(ev, key, ...)
         destLocation.z = chestLocation.z
         destLocation.facing = 1 --east, +x
       end
+      --locationAddInto(destLocation, params.startingPos) 
       moveTo(destLocation, false)
       --oh my god, we did it
       --we're in front of the chest, ready.
@@ -540,10 +560,12 @@ function stateMachine:s_forEvery(ev, key, ...)
       --amen
       local wal = {
         type = "deposit",
-        location = globalPosition(),
+        --location = globalPosition(),
+        location = chestLocation,
         name = turtleItemInfo.name,
         damage = turtleItemInfo.damage,
         slot = slot,
+        count = turtleItemInfo.count,
         chestCountBefore = chestCountBefore,
         customName = customName,
         empty = false
@@ -552,7 +574,7 @@ function stateMachine:s_forEvery(ev, key, ...)
       -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
       walRecover()
       while true do
-        local glob = globalLocation()
+        local glob = globalPosition()
         if glob.y == params.startingPos.y then
           break
         elseif glob.y > params.startingPos.y then
@@ -607,11 +629,17 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
         break
       end
     end
+    --[[
     local info = {
       name = slotsInfo[idx].name,
       damage = slotsInfo[idx].damage,
       customName = ""
     }
+    --]]
+    local info = slotsInfo[idx]
+    info.customName = ""
+    print(idx)
+    print(inspect(slotsInfo[idx]))
     assert(info.damage)
     info.stackSize = turtle.getItemCount(idx) + turtle.getItemSpace(idx)
     info.hasNBT = false
@@ -680,7 +708,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
     end
     local cInfo
     if af.exists(itemCInfoFn) then
-      cInfo = af.read(itemFInfoFn)
+      cInfo = af.read(itemCInfoFn)
     else
       cInfo = {info = {}, chests = {}}
     end
@@ -722,9 +750,6 @@ function stateMachine:checkInv()
       --print(deets)
       local itemInfoFn  = "db/items/" .. deets.name .. ".i"
       local itemCInfoFn = "db/items/" .. deets.name .. "/" .. deets.damage .. ".c"
-      res[slot].empty = (deets.count == 0)
-      res[slot].name = deets.name
-      res[slot].damage = deets.damage
       if af.exists(itemInfoFn) then
         local itemInfo = af.read(itemInfoFn)
         res[slot] = itemInfo
@@ -733,8 +758,8 @@ function stateMachine:checkInv()
             res[slot].haveAllInfo = false
           else
             local itemCInfo = af.read(itemCInfoFn)
-            res[slot] = itemCInfo
-            if itemCInfo.hasNBT then
+            res[slot] = itemCInfo.info
+            if res[slot].hasNBT then
               res[slot].haveAllInfo = not not self.slotNames[slot]
             else
               res[slot].haveAllInfo = true
@@ -748,13 +773,16 @@ function stateMachine:checkInv()
           end
         end
       end
-      print("haveallinfo: " .. bool2str(res[slot].haveAllInfo))
+      res[slot].empty = (deets.count == 0)
+      res[slot].name = deets.name
+      res[slot].damage = deets.damage
+      --print("haveallinfo: " .. bool2str(res[slot].haveAllInfo))
     else
       res[slot].empty = true
     end
     haveEverySlotInfo = haveEverySlotInfo and ( res[slot].empty or res[slot].haveAllInfo )
   end
-  print("haveevery: "..bool2str(haveEverySlotInfo))
+  --print("haveevery: "..bool2str(haveEverySlotInfo))
   return haveEverySlotInfo, res
 end
         
@@ -816,8 +844,10 @@ if tArgs[1] == "init" then
             x = f
           end
           y = -d
-          local chestInfo = {count = 0, location = {x = x, y = y, z = z}}
-          af.write("db/chests/"..x..","..y..","..z, chestInfo)
+          local chestLocation = {x = x, y = y, z = z}
+          locationAddInto(chestLocation, startingPos)
+          local chestInfo = {count = 0, location = chestLocation}
+          af.write("db/chests/"..chestLocation.x..","..chestLocation.y..","..chestLocation.z, chestInfo)
           --emptyChests[#emptyChests + 1] = chestInfo
           table.insert(emptyChests, chestInfo)
         end
@@ -836,7 +866,7 @@ if tArgs[1] == "init" then
   af.write("db/params", params)
   print("Init finished.")
   return
-elseif tArgs[1] ~= "startup" then
+elseif tArgs[1] ~= "startup" and tArgs[1] ~= "s" then
   print("Unknown subcommand "..(tArgs[1] or ""))
   return
 end

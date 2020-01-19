@@ -10,9 +10,11 @@ s2 +Z
 w3 -X
 
 offset 0
-  -z
--x  +x
-  +z
+     0
+    -z
+3 -x  +x 1
+    +z
+     2
 offset 1
   -x
 +z  -z

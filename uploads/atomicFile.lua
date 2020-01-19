@@ -69,6 +69,7 @@ function exports.write(name, data)
 end
 
 function exports.read(name)
+  assert(name)
   local oldName = name .. exports.oldPostfix
   exports.recover(name)
   local data, remaining = mp.unpack(readAll(oldName))
