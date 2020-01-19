@@ -492,99 +492,99 @@ function stateMachine:s_forEvery(ev, key, ...)
     --self.v_forEvery.idx = 1
     for slot=1,16 do
       local turtleItemInfo = turtle.getItemDetail(slot)
-      if not turtleItemInfo then
-        break
-      end
-      local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
-      local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
-      local chestIdx = nil
-      local stackSize
-      local hasNBT
-      if itemInfo.damageDiffers then
-        stackSize = itemCInfo.info.stackSize
-        hasNBT = itemCInfo.info.hasNBT
-      else
-        stackSize = itemInfo.stackSize
-        hasNBT = itemInfo.hasNBT
-      end
-      local maxCount = 9 * 3 * stackSize
-      local customName = nil
-      if hasNBT then
-        customName = self.slotNames[slot]
-      end
-      local chestLocation
-      local chestCountBefore
-      if not hasNBT then
-        for i, val in ipairs(itemCInfo.chests) do
-          --todo: potentially split a deposit into multiple pieces
-          if val.count + turtleItemInfo.count <= maxCount then
-            chestLocation = val.location
-            chestCountBefore = val.count
-            break
+      if turtleItemInfo then --normally I'd do `if not turtleItemInfo then continue end` but lua doesn't have continue because fuck lua
+        local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
+        local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
+        local chestIdx = nil
+        local stackSize
+        local hasNBT
+        if itemInfo.damageDiffers then
+          stackSize = itemCInfo.info.stackSize
+          hasNBT = itemCInfo.info.hasNBT
+        else
+          stackSize = itemInfo.stackSize
+          hasNBT = itemInfo.hasNBT
+        end
+        local maxCount = 9 * 3 * stackSize
+        local customName = nil
+        if hasNBT then
+          customName = self.slotNames[slot]
+        end
+        local chestLocation
+        local chestCountBefore
+        if not hasNBT then
+          for i, val in ipairs(itemCInfo.chests) do
+            --todo: potentially split a deposit into multiple pieces
+            if val.count + turtleItemInfo.count <= maxCount then
+              chestLocation = val.location
+              chestCountBefore = val.count
+              break
+            end
           end
         end
-      end
-      if not chestLocation then
-        local emptys = af.read("db/empty_chests")
-        if #emptys == 0 then
-          error("no chests available!")
+        if not chestLocation then
+          local emptys = af.read("db/empty_chests")
+          if #emptys == 0 then
+            error("no chests available!")
+          end
+          chestLocation = emptys[1].location
+          chestCountBefore = 0
         end
-        chestLocation = emptys[1].location
-        chestCountBefore = 0
-      end
-      local destLocation = {
-        y = chestLocation.y
-      }
-      local bound = boundingBox(params)
-      if chestLocation.x == bound.lnw.x then
-        destLocation.x = chestLocation.x + 1
-        destLocation.z = chestLocation.z
-        destLocation.facing = 3 --west, -x
-      elseif chestLocation.z == bound.lnw.z then
-        destLocation.x = chestLocation.x
-        destLocation.z = chestLocation.z + 1
-        destLocation.facing = 0 --north, -z
-      else
-        destLocation.x = chestLocation.x - 1
-        destLocation.z = chestLocation.z
-        destLocation.facing = 1 --east, +x
-      end
-      --locationAddInto(destLocation, params.startingPos) 
-      moveTo(destLocation, false)
-      --oh my god, we did it
-      --we're in front of the chest, ready.
-      --about to deposit the master's glorious items.
-      --stack of cobblestone #7,853 may you be deposited well
-      --in today and in tommorow, forever organized
-      --for our master
-      --amen
-      local wal = {
-        type = "deposit",
-        --location = globalPosition(),
-        location = chestLocation,
-        name = turtleItemInfo.name,
-        damage = turtleItemInfo.damage,
-        slot = slot,
-        count = turtleItemInfo.count,
-        chestCountBefore = chestCountBefore,
-        customName = customName,
-        empty = false
-      }
-      af.write("db/wal", wal)
-      -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
-      walRecover()
-      while true do
-        local glob = globalPosition()
-        if glob.y == params.startingPos.y then
-          break
-        elseif glob.y > params.startingPos.y then
-          down()
-        elseif glob.y < params.startingPos.y then
-          up()
+        local destLocation = {
+          y = chestLocation.y
+        }
+        local bound = boundingBox(params)
+        if chestLocation.x == bound.lnw.x then
+          destLocation.x = chestLocation.x + 1
+          destLocation.z = chestLocation.z
+          destLocation.facing = 3 --west, -x
+        elseif chestLocation.z == bound.lnw.z then
+          destLocation.x = chestLocation.x
+          destLocation.z = chestLocation.z + 1
+          destLocation.facing = 0 --north, -z
+        else
+          destLocation.x = chestLocation.x - 1
+          destLocation.z = chestLocation.z
+          destLocation.facing = 1 --east, +x
+        end
+        --locationAddInto(destLocation, params.startingPos) 
+        moveTo(destLocation, false)
+        --oh my god, we did it
+        --we're in front of the chest, ready.
+        --about to deposit the master's glorious items.
+        --stack of cobblestone #7,853 may you be deposited well
+        --in today and in tommorow, forever organized
+        --for our master
+        --amen
+        local wal = {
+          type = "deposit",
+          --location = globalPosition(),
+          location = chestLocation,
+          name = turtleItemInfo.name,
+          damage = turtleItemInfo.damage,
+          slot = slot,
+          count = turtleItemInfo.count,
+          chestCountBefore = chestCountBefore,
+          customName = customName,
+          empty = false
+        }
+        af.write("db/wal", wal)
+        -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
+        walRecover()
+        while true do
+          local glob = globalPosition()
+          if glob.y == params.startingPos.y then
+            break
+          elseif glob.y > params.startingPos.y then
+            down()
+          elseif glob.y < params.startingPos.y then
+            up()
+          end
         end
       end
     end
     moveTo(params.startingPos)
+    self.slotsNames = {}
     self:s_startPos("start")
   end
 end
