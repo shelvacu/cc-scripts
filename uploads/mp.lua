@@ -403,4 +403,10 @@ end
 
 mp.unpack = messageUnpack
 
+local function clone(data)
+  return mp.unpack(mp.pack(data))
+end
+
+mp.clone = clone
+
 return mp

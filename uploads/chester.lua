@@ -76,14 +76,21 @@ debug.override()
 require "shellib"
 local inspect = require"inspect"
 Settings.ensureFuel = true
+local mp = require "mp"
 local af = require "atomicFile"
 
 local stateMachine = {
   v_startPos = {
-    v_itemInfo = {}
+    v_itemInfo = {},
+    v_itemList = {},
+    v_queryQuantity = {},
+    v_queryItem = {}
   },
   v_forEvery = {},
-  slotNames = {}
+  searchResults = {},
+  slotNames = {},
+  itemCanNames = nil,
+  itemCanNameToInfo = nil
 }
 
 local params
@@ -137,8 +144,8 @@ end
 
 -- this code just pretends back() doesn't exist, lol
 local function moveTo(spot, verticalFirst)
-  print("moving to ")--.. spot.x .. "," .. spot.y .. "," .. spot.z)
-  print(inspect({spot, verticalFirst}))
+  --print("moving to ")--.. spot.x .. "," .. spot.y .. "," .. spot.z)
+  --print(inspect({spot, verticalFirst}))
   if verticalFirst then
     while true do
       local glob = globalPosition()
@@ -458,12 +465,12 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     print("[w]ithdraw")
   elseif ev == "key" and key == keys.d then
     self:s_startPos_deposit("start")
-  elseif ev == "key" and key == keys.w then
-    die("not implemented")
-    --self:s_startPos_queryItem("start")
+  --elseif ev == "key" and key == keys.w then
+  elseif ev == "char" and key == "w" then
+    self:s_startPos_queryItem("start")
   elseif ev == "turtle_inventory" then
     local haveEvery, itemInfos = self:checkInv()
-    if not haveEvery then
+    while not haveEvery do
       turnLeft()
       for idx, info in ipairs(itemInfos) do
         if info.empty or info.haveAllInfo then
@@ -473,6 +480,8 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
           turtle.drop()
         end
       end
+      turnRight()
+      haveEvery, itemInfos = self:checkInv()
     end
     if self.autoInvTimer then
       os.cancelTimer(self.autoInvTimer)
@@ -480,16 +489,85 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     os.autoInvTimer = os.startTimer(2)
   elseif ev == "timer" and key == os.autoInvTimer then
     os.autoInvTimer = nil
-    self:s_forEvery("start")
+    self:s_forEvery("start", "deposit")
   else
     self:s_startPos(ev, key, ...)
   end
 end
 
-function stateMachine:s_forEvery(ev, key, ...)
+function stateMachine:withdraw(howMany, v)
+  local chestLocation
+  local chestCountBefore
+  local count
+  assert(howMany == 1 or not v.info.ci)
+  clear()
+  print("working...")
+  if v.info.ci then
+    chestLocation = v.info.ci.location
+    chestCountBefore = 1
+    count = 1
+  else
+    assert(#v.cInfo.chests > 0)
+    chestLocation = v.cInfo.chests[1].location
+    chestCountBefore = v.cInfo.chests[1].count
+    count = math.min(chestCountBefore, howMany)
+  end
+  local destLocation = {
+    y = chestLocation.y
+  }
+  local bound = boundingBox(params)
+  if chestLocation.x == bound.lnw.x then
+    destLocation.x = chestLocation.x + 1
+    destLocation.z = chestLocation.z
+    destLocation.facing = 3 --west, -x
+  elseif chestLocation.z == bound.lnw.z then
+    destLocation.x = chestLocation.x
+    destLocation.z = chestLocation.z + 1
+    destLocation.facing = 0 --north, -z
+  else
+    destLocation.x = chestLocation.x - 1
+    destLocation.z = chestLocation.z
+    destLocation.facing = 1 --east, +x
+  end
+  --locationAddInto(destLocation, params.startingPos) 
+  moveTo(destLocation, false)
+  --oh my god, we did it
+  --we're in front of the chest, ready.
+  --about to deposit the master's glorious items.
+  --stack of cobblestone #7,853 may you be deposited well
+  --in today and in tommorow, forever organized
+  --for our master
+  --amen
+  local wal = {
+    type = "withdraw",
+    --location = globalPosition(),
+    location = chestLocation,
+    name = v.info.name,
+    damage = v.info.damage,
+    slot = 1,
+    count = count,
+    chestCountBefore = chestCountBefore,
+    customName = v.info.customName,
+    empty = false
+  }
+  assert(wal.damage)
+  assert(wal.name)
+  af.write("db/wal", wal)
+  -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
+  walRecover()
+  moveTo(params.startingPos, true)
+  if howMany > count then
+    withdraw(howMany - count, v)
+  end
+end
+
+function stateMachine:s_forEvery(ev, direction, ...)
   if ev == "start" then
+    assert(direction == "deposit" or direction == "withdraw")
     self.currState = self.s_forEvery
     --self.v_forEvery.idx = 1
+    clear()
+    print("working...")
     for slot=1,16 do
       local turtleItemInfo = turtle.getItemDetail(slot)
       if turtleItemInfo then --normally I'd do `if not turtleItemInfo then continue end` but lua doesn't have continue because fuck lua
@@ -525,6 +603,7 @@ function stateMachine:s_forEvery(ev, key, ...)
         if not chestLocation then
           local emptys = af.read("db/empty_chests")
           if #emptys == 0 then
+            moveTo(params.startingPos)
             error("no chests available!")
           end
           chestLocation = emptys[1].location
@@ -605,8 +684,7 @@ function stateMachine:s_startPos_deposit(ev, key, ...)
       return self:s_startPos_itemInfo("start")
     end
   elseif ev == "key" and key == keys.d then
-    self.mode = "deposit"
-    return self:s_forEvery("start")
+    return self:s_forEvery("start","deposit")
   else
     return self:s_startPos(ev, key, ...)
   end
@@ -720,17 +798,218 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
       cInfo.info.hasNBT = info.hasNBT
     end
     local infoData = {}
-    infoData.name = info.data
+    infoData.name = info.name
     infoData.stackSize = info.stackSize
     infoData.hasNBT = info.hasNBT
     infoData.damageDiffers = info.damageDiffers
+    assert(infoData.name)
+    assert(infoData.stackSize)
     af.write(itemCInfoFn, cInfo)
     af.write(itemInfoFn, infoData)
     self:s_startPos_deposit("start")
   elseif ev == "char" and selIdx == customName(info) then
+  --elseif ev == "ch" .. "ar" then
     info.customName = info.customName .. key
     clear()
     printItemInfo(info, selIdx)
+  else
+    self:s_startPos(ev, key, ...)
+  end
+end
+
+local function canNameList()
+  local itemCanNames = {}
+  local itemCanNameToInfo = {}
+  local infos = {}
+  local infofs = fs.list("db/items")
+  for _, name in ipairs(infofs) do
+    local fullName = "db/items/"..name
+    if not fs.isDir(fullName) then
+      local info = af.read(string.sub(fullName,1,-5))
+      infos[#infos+1] = info
+    end
+  end
+  for _, info in ipairs(infos) do
+    --print(inspect(info))
+    for _, name in ipairs(fs.list("db/items/" .. info.name)) do
+      assert(info.name)
+      local damageInfo = {
+        name = info.name,
+        stackSize = info.stackSize,
+        hasNBT = info.hasNBT
+      }
+      local fullName = "db/items/" .. info.name .. "/" .. name
+      local afName = string.sub(fullName, 1, -5)
+      local fileInfo = af.read(afName)
+      if info.damageDiffers then
+        damageInfo.stackSize = fileInfo.info.stackSize
+        damageInfo.hasNBT = fileInfo.info.hasNBT
+      end
+      damageInfo.damage = fileInfo.info.damage
+      damageInfo.cInfo = fileInfo
+      if damageInfo.hasNBT then
+        for _, ci in ipairs(fileInfo.chests) do
+          if ci.count ~= 0 then
+            local customInfo = mp.clone(damageInfo)
+            customInfo.customName = ci.customName
+            customInfo.ci = ci
+            customInfo.count = 1
+            assert(ci.customName)
+            local canName = customInfo.name .. ":" .. customInfo.damage .. ":" .. customInfo.customName
+            itemCanNames[#itemCanNames+1] = canName
+            itemCanNameToInfo[canName] = customInfo
+          end
+        end
+      else
+        local count = 0
+        for _, ci in ipairs(fileInfo.chests) do
+          count = count + ci.count
+        end
+        damageInfo.count = count
+        local canName = damageInfo.name .. ":" .. damageInfo.damage .. ":"
+        itemCanNames[#itemCanNames+1] = canName
+        itemCanNameToInfo[canName] = damageInfo
+      end
+    end
+  end
+  return itemCanNames, itemCanNameToInfo
+end
+
+function stateMachine:s_startPos_queryItem(ev, key, ...)
+  local v = self.v_startPos.v_queryItem
+  if ev == "start" then
+    self.currState = self.s_startPos_queryItem
+    v.searchStr = "minecraft:"
+    clear()
+    local the_err = (self.err or "")
+    print(the_err)
+    self.err = nil
+    print("search: " .. v.searchStr)
+  elseif ev == "key" and key == keys.enter then
+    --do the search
+
+    --okay, I just came up with this "canonical name"
+    --minecraftid:damage:customname
+    local itemCanNames, itemCanNameToInfo = canNameList()
+    self.itemCanName = itemCanNames
+    self.itemCanNameToInfo = itemCanNameToInfo
+    local results = {}
+    for _, canName in ipairs(itemCanNames) do
+      if starts_with(canName, v.searchStr) then
+        results[#results + 1] = canName
+      end
+    end
+    self.searchResults = results
+    if #results == 0 then
+      self.err = "No items found for " .. v.searchStr
+      self:s_startPos_queryItem("start")
+    elseif #results == 1 then
+      self:s_startPos_queryQuantity("start")
+    else
+      self:s_startPos_itemList("start")
+    end
+  elseif ev == "key" and key == keys.backspace then
+    v.searchStr = string.sub(v.searchStr, 1, -2)
+    clear()
+    print()
+    print("search: " .. v.searchStr)
+  elseif ev == "char" then
+    v.searchStr = v.searchStr .. key
+    clear()
+    print()
+    print("search: " .. v.searchStr)
+  else
+    self:s_startPos(ev, key, ...)
+  end
+end
+
+function stateMachine:drawItemList(selIdx)
+  local _, height = term.getSize()
+  local middle = math.floor(height/2)
+  for lineNum=1,height do
+    local relNum = lineNum - middle
+    local idx = selIdx - relNum
+    if idx < 1 or idx > #self.searchResults then
+      print()
+    else
+      print(bool2str(idx == selIdx, ">", " ") .. self.searchResults[idx])
+    end
+  end
+end
+
+function stateMachine:s_startPos_itemList(ev, key, ...)
+  local v = self.v_startPos.v_itemList
+  if ev == "start" then
+    assert(#self.searchResults >= 2)
+    self.currState = self.s_startPos_itemList
+    v.selIdx = 1
+    self:drawItemList(v.selIdx)
+  elseif ev == "key" and key == keys.up then
+    if v.selIdx > 1 then
+      v.selIdx = v.selIdx - 1
+    end
+    self:drawItemList(v.selIdx)
+  elseif ev == "key" and key == keys.down then
+    if v.selIdx < #self.searchResults then
+      v.selIdx = v.selIdx + 1
+    end
+    self:drawItemList(v.selIdx)
+  elseif ev == "key" and (key == keys.enter or key == keys.space) then
+    self.searchResults = {self.searchResults[v.selIdx]}
+    self:s_startPos_queryQuantity("start")
+  else
+    self:s_startPos(ev, key, ...)
+  end
+end
+
+function stateMachine:displayQuantity(v)
+  clear()
+  print(v.info.name .. " d" .. v.info.damage)
+  print("stack: " .. v.stackSize)
+  print("have: " .. v.info.count)
+  print("qty: " .. v.selectedQuantity)
+end
+
+function stateMachine:s_startPos_queryQuantity(ev, key, ...)
+  local v = self.v_startPos.v_queryQuantity
+  if ev == "start" then
+    assert(#self.searchResults == 1)
+    self.currState = self.s_startPos_queryQuantity
+    v.selectedQuantity = 1
+    v.canName = self.searchResults[1]
+    --print(inspect(self.itemCanNameToInfo))
+    for k,v in pairs(self.itemCanNameToInfo) do
+      print(k)
+    end
+    print(v.canName)
+    assert(self.itemCanNameToInfo[v.canName])
+    v.info = self.itemCanNameToInfo[v.canName]
+    v.cInfo = v.info.cInfo
+    v.stackSize = v.info.stackSize
+    --print(inspect(v))
+    assert(v.info.stackSize)
+    self:displayQuantity(v)
+  elseif ev == "key" and (key == keys.space or key == keys.enter) then
+    self:withdraw(v.selectedQuantity, v)
+    self:s_startPos_waiting("start")
+  elseif ev == "key" and (key == keys.up or key == keys.right or key == keys.equals) then
+    v.selectedQuantity = v.selectedQuantity + 1
+    self:displayQuantity(v)
+  elseif ev == "key" and (key == keys.down or key == keys.left or key == keys.minus) then
+    if v.selectedQuantity >= 1 then
+      v.selectedQuantity = v.selectedQuantity - 1
+    end
+    self:displayQuantity(v)
+  elseif ev == "key" and key == keys.s then
+    v.selectedQuantity = v.selectedQuantity * v.stackSize
+    self:displayQuantity(v)
+  elseif ev == "key" and isNumeralKeyCode(key) then
+    local char = getCharFromNumeralKeyCode(key)
+    v.selectedQuantity = tonumber(v.selectedQuantity .. char)
+    self:displayQuantity(v)
+  elseif ev == "key" and key == keys.backspace then
+    v.selectedQuantity = tonumber(string.sub(v.selectedQuantity.."",1,-2)) or 0
+    self:displayQuantity(v)
   else
     self:s_startPos(ev, key, ...)
   end
@@ -764,6 +1043,17 @@ function stateMachine:checkInv()
             end
           end
         else
+          if not af.exists(itemCInfoFn) then
+            af.write(itemCInfoFn, {
+              info = {
+                name = itemInfo.name,
+                damage = deets.damage,
+                stackSize = itemInfo.stackSize,
+                hasNBT = itemInfo.hasNBT
+              },
+              chests = {}
+            })
+          end
           if itemInfo.hasNBT then
             res[slot].haveAllInfo = not not self.slotNames[slot]
           else
@@ -784,6 +1074,69 @@ function stateMachine:checkInv()
   return haveEverySlotInfo, res
 end
         
+local function chestDig()
+  local suc, bi = turtle.inspect()
+  if suc and bi.name == "minecraft:chest" then
+    --do nothing
+  else
+    while turtle.dig() do end
+    local deets = turtle.getItemDetail()
+    if (not deets) or deets.name ~= "minecraft:chest" then
+      local found = false
+      for i=1,16 do
+        local deets = turtle.getItemDetail(i)
+        if deets and deets.name == "minecraft:chest" then
+          turtle.select(i)
+          found = true
+          break
+        end
+      end
+      if not found then
+        error("ran out of chests!")
+      end
+    end
+    turtle.place()
+  end
+end
+
+local function writeChests(forwards, rights, downs, startingPos)
+  local emptyChests = {}
+  for f=0,forwards do
+    for r=0,rights do
+      if math.fmod(f+r, 2) == 0 then --checkerboard pattern of chests
+        for d=1,downs do
+          local x,y,z
+          if startingPos.facing == 0 then
+            z = -f
+            x =  r
+          elseif startingPos.facing == 1 then
+            z = r
+            x = f
+          elseif startingPos.facing == 2 then
+            z = f
+            x = -r
+          elseif startingPos.facing == 3 then
+            z = -r
+            x = f
+          end
+          y = -d
+          local chestLocation = {x = x, y = y, z = z}
+          locationAddInto(chestLocation, startingPos)
+          local chestInfo = {count = 0, location = chestLocation}
+          local chestFn = "db/chests/"..chestLocation.x..","..chestLocation.y..","..chestLocation.z
+          if not af.exists(chestFn) then
+            af.write("db/chests/"..chestLocation.x..","..chestLocation.y..","..chestLocation.z, chestInfo)
+            table.insert(emptyChests, chestInfo)
+          end
+        end
+      end
+    end
+  end
+
+  af.write("db/empty_chests", emptyChests)
+  return emptyChests
+end
+
 
 
 
@@ -822,39 +1175,11 @@ if tArgs[1] == "init" then
   fs.makeDir("db/items")
   fs.makeDir("db/chests")
 
-  local emptyChests = {}
-  for f=0,forwards-1 do
-    for r=0,rights-1 do
-      if math.fmod(f+r, 2) == 0 then --checkerboard pattern of chests
-        for d=1,downs do
-          local x,y,z
-          if startingPos.facing == 0 then
-            z = -f
-            x =  r
-          elseif startingPos.facing == 1 then
-            z = r
-            x = f
-          elseif startingPos.facing == 2 then
-            z = f
-            x = -r
-          elseif startingPos.facing == 3 then
-            z = -r
-            x = f
-          end
-          y = -d
-          local chestLocation = {x = x, y = y, z = z}
-          locationAddInto(chestLocation, startingPos)
-          local chestInfo = {count = 0, location = chestLocation}
-          af.write("db/chests/"..chestLocation.x..","..chestLocation.y..","..chestLocation.z, chestInfo)
-          --emptyChests[#emptyChests + 1] = chestInfo
-          table.insert(emptyChests, chestInfo)
-        end
-      end
-    end
+  writeChests(forwards, rights, downs, startingPos)
+  if not af.exists("db/wal") then
+    af.write("db/wal", {empty = true})
   end
 
-  af.write("db/empty_chests", emptyChests)
-  af.write("db/wal", {empty = true})
   local params = {
     startingPos = startingPos,
     forwards = forwards,
@@ -863,6 +1188,81 @@ if tArgs[1] == "init" then
   }
   af.write("db/params", params)
   print("Init finished.")
+  return
+elseif tArgs[1] == "expand" then
+  if not tArgs[4] then
+    print("3 arguments required for 'expand' (4 total)")
+    return
+  end
+  local forwards = tonumber(tArgs[2])
+  local rights = tonumber(tArgs[3])
+  local downs = tonumber(tArgs[4])
+  if not (forwards and rights and downs) then
+    print("all arguments must be numbers")
+    return
+  end
+  local params = af.read("db/params")
+  if forwards < params.forwards or rights < params.rights or downs < params.downs then
+    print("size must be same or larger in all directions")
+    return
+  end
+  local startingPos = params.startingPos
+  getGlobalOffset()
+  for f=0,forwards do
+    for r=0,rights do
+      if math.fmod(f+r, 2) == 1 then --all the empty spaces between chests
+        local x
+        local y
+        local z
+        if startingPos.facing == 0 then
+          z = -f
+          x =  r
+        elseif startingPos.facing == 1 then
+          z = r
+          x = f
+        elseif startingPos.facing == 2 then
+          z = f
+          x = -r
+        elseif startingPos.facing == 3 then
+          z = -r
+          x = f
+        end
+        local destLocation = {x = x, y = 0, z = z, facing = params.startingPos.facing}
+        locationAddInto(destLocation, startingPos)
+        moveTo(destLocation)
+        for d=1,downs do
+          while turtle.digDown() do end
+          down()
+          -- right now we're facing "forward", relative to starting position
+          if f < forwards then
+            chestDig()
+          end
+          turnRight()
+          if r < rights then
+            chestDig()
+          end
+          turnRight()
+          if f > 0 then
+            chestDig()
+          end
+          turnRight()
+          if r > 0 then
+            chestDig()
+          end
+          turnRight()
+        end
+        while globalPosition().y < startingPos.y do
+          up()
+        end
+      end
+    end
+  end
+  params.forwards = forwards
+  params.rights = rights
+  params.downs = downs
+  writeChests(params.forwards, params.rights, params.downs, params.startingPos)
+  af.write("db/params", params)
+  moveTo(startingPos)
   return
 elseif tArgs[1] ~= "startup" and tArgs[1] ~= "s" then
   print("Unknown subcommand "..(tArgs[1] or ""))
