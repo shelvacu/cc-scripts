@@ -162,6 +162,7 @@ local function messagePackImpl(val)
       iters = 0
       for idx, val in ipairs(val) do
         appendArray(res, {messagePackImpl(val)})
+        sleep(0)
         iters = iters + 1
       end
       if iters ~= len then
@@ -175,6 +176,7 @@ local function messagePackImpl(val)
       for k,v in pairs(val) do
         appendArray(res, {messagePackImpl(k)})
         appendArray(res, {messagePackImpl(v)})
+        sleep(0)
         len = len + 1
       end
       if len <= 15 then
@@ -202,7 +204,7 @@ local function messagePack(data)
 end
 
 mp.pack = messagePack
-mp.messagePackImpl = messagePackImpl --for debugging
+mp.packArr = messagePackImpl
 
 local messageUnpack = nil
 

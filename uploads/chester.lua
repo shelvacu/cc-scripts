@@ -463,6 +463,8 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     clear()
     print("[d]eposit")
     print("[w]ithdraw")
+    print()
+    print("fuel: " .. turtle.getFuelLevel())
   elseif ev == "key" and key == keys.d then
     self:s_startPos_deposit("start")
   --elseif ev == "key" and key == keys.w then

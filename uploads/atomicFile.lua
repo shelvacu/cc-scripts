@@ -56,12 +56,14 @@ function exports.recover(name)
 end
     
 function exports.write(name, data)
-  local rawData = mp.pack(data)
+  local rawData = {mp.packArr(data)}
   local oldName = name .. exports.oldPostfix
   local newName = name .. exports.newPostfix
   exports.recover(name)
   local f = assert(io.open(newName, "wb"))
-  f:write(rawData)
+  for _,v in ipairs(rawData) do
+    f:write(v)
+  end
   f:close()
   fs.delete(oldName)
   fs.move(newName, oldName)
