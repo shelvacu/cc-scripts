@@ -143,10 +143,12 @@ local function locationAddInto(a, b)
 end
 
 -- this code just pretends back() doesn't exist, lol
-local function moveTo(spot, verticalFirst)
+local function moveTo(spot)
   --print("moving to ")--.. spot.x .. "," .. spot.y .. "," .. spot.z)
   --print(inspect({spot, verticalFirst}))
-  if verticalFirst then
+  local glob = globalPosition()
+  if glob.x == spot.x and glob.z == spot.z then
+    --we only need to move up and down
     while true do
       local glob = globalPosition()
       if glob.y < spot.y then
@@ -156,6 +158,18 @@ local function moveTo(spot, verticalFirst)
       else
         break
       end
+    end
+    turnToFace(spot.facing)
+    return
+  end
+  while true do
+    local glob = globalPosition()
+    if glob.y < params.startingPos.y then
+      up()
+    elseif glob.y > params.startingPos.y then
+      down()
+    else
+      break
     end
   end
   local glob = globalPosition()
@@ -209,16 +223,14 @@ local function moveTo(spot, verticalFirst)
     end
   end
 
-  if not verticalFirst then
-    while true do
-      local glob = globalPosition()
-      if glob.y < spot.y then
-        up()
-      elseif glob.y > spot.y then
-        down()
-      else
-        break
-      end
+  while true do
+    local glob = globalPosition()
+    if glob.y < spot.y then
+      up()
+    elseif glob.y > spot.y then
+      down()
+    else
+      break
     end
   end
   turnToFace(spot.facing)
@@ -497,10 +509,11 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
   end
 end
 
-function stateMachine:withdraw(howMany, v)
+function stateMachine:withdraw(howMany, v, slot)
   local chestLocation
   local chestCountBefore
   local count
+  local slot = slot or 1
   assert(howMany == 1 or not v.info.ci)
   clear()
   print("working...")
@@ -512,7 +525,7 @@ function stateMachine:withdraw(howMany, v)
     assert(#v.cInfo.chests > 0)
     chestLocation = v.cInfo.chests[1].location
     chestCountBefore = v.cInfo.chests[1].count
-    count = math.min(chestCountBefore, howMany)
+    count = math.min(chestCountBefore, howMany, v.stackSize)
   end
   local destLocation = {
     y = chestLocation.y
@@ -532,7 +545,7 @@ function stateMachine:withdraw(howMany, v)
     destLocation.facing = 1 --east, +x
   end
   --locationAddInto(destLocation, params.startingPos) 
-  moveTo(destLocation, false)
+  moveTo(destLocation)
   --oh my god, we did it
   --we're in front of the chest, ready.
   --about to deposit the master's glorious items.
@@ -546,7 +559,7 @@ function stateMachine:withdraw(howMany, v)
     location = chestLocation,
     name = v.info.name,
     damage = v.info.damage,
-    slot = 1,
+    slot = slot,
     count = count,
     chestCountBefore = chestCountBefore,
     customName = v.info.customName,
@@ -557,9 +570,9 @@ function stateMachine:withdraw(howMany, v)
   af.write("db/wal", wal)
   -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
   walRecover()
-  moveTo(params.startingPos, true)
+  moveTo(params.startingPos)
   if howMany > count then
-    withdraw(howMany - count, v)
+    self:withdraw(howMany - count, v, slot + 1)
   end
 end
 
@@ -629,7 +642,7 @@ function stateMachine:s_forEvery(ev, direction, ...)
           destLocation.facing = 1 --east, +x
         end
         --locationAddInto(destLocation, params.startingPos) 
-        moveTo(destLocation, false)
+        moveTo(destLocation)
         --oh my god, we did it
         --we're in front of the chest, ready.
         --about to deposit the master's glorious items.
@@ -652,16 +665,6 @@ function stateMachine:s_forEvery(ev, direction, ...)
         af.write("db/wal", wal)
         -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
         walRecover()
-        while true do
-          local glob = globalPosition()
-          if glob.y == params.startingPos.y then
-            break
-          elseif glob.y > params.startingPos.y then
-            down()
-          elseif glob.y < params.startingPos.y then
-            up()
-          end
-        end
       end
     end
     moveTo(params.startingPos)
