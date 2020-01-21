@@ -162,6 +162,7 @@ local function moveTo(spot)
     turnToFace(spot.facing)
     return
   end
+
   while true do
     local glob = globalPosition()
     if glob.y < params.startingPos.y then
@@ -570,9 +571,10 @@ function stateMachine:withdraw(howMany, v, slot)
   af.write("db/wal", wal)
   -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
   walRecover()
-  moveTo(params.startingPos)
   if howMany > count then
     self:withdraw(howMany - count, v, slot + 1)
+  else
+    moveTo(params.startingPos)
   end
 end
 
