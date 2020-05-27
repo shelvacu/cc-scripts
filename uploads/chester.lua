@@ -1055,6 +1055,8 @@ function stateMachine:s_startPos_queryItem(ev, key, ...)
           idx = idx + 1
         end
         break
+      elseif startIncl + 1 == endExcl then
+        break
       elseif v.searchStr < item then
         endExcl = halfwayIdx
       else
