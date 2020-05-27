@@ -206,7 +206,7 @@ function digStraight()
 		posX = posX + 1
 	elseif rotation == 2 then
 		posZ = posZ - 1
-elseif rotation == 3 then
+  elseif rotation == 3 then
 		posX = posX - 1
 	end
   while turtle.detectUp() do

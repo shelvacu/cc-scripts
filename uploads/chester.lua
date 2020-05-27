@@ -89,8 +89,8 @@ local stateMachine = {
   v_forEvery = {},
   searchResults = {},
   slotNames = {},
-  itemCanNames = nil,
-  itemCanNameToInfo = nil
+  itemCanNames = {},
+  itemCanNameToInfo = {}
 }
 
 local params
@@ -289,6 +289,7 @@ local function walRecover()
       end
       if modified then
         af.write(itemCFn, itemCInfo)
+        stateMachine:updateSpecificCanName("db/items/"..wal.name..".i")
       end
       if wal.chestCountBefore == 0 then
         -- this is an allocation
@@ -334,6 +335,7 @@ local function walRecover()
       end
       if modified then
         af.write(itemCFn, itemCInfo)
+        stateMachine:updateSpecificCanName("db/items/"..wal.name..".i")
       end
       if wal.chestCountBefore == wal.count then --this is a deallocation
         local emptys = af.read("db/empty_chests")
@@ -571,7 +573,7 @@ function stateMachine:withdraw(howMany, v, slot)
   af.write("db/wal", wal)
   -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
   walRecover()
-  if howMany > count then
+  if howMany > count and slot < 16 then
     self:withdraw(howMany - count, v, slot + 1)
   else
     moveTo(params.startingPos)
@@ -813,6 +815,7 @@ function stateMachine:s_startPos_itemInfo(ev, key, ...)
     assert(infoData.stackSize)
     af.write(itemCInfoFn, cInfo)
     af.write(itemInfoFn, infoData)
+    self:updateSpecificCanName(itemInfoFn)
     self:s_startPos_deposit("start")
   elseif ev == "char" and selIdx == customName(info) then
   --elseif ev == "ch" .. "ar" then
@@ -879,7 +882,123 @@ local function canNameList()
       end
     end
   end
+  --print("sorting")
+  table.sort(itemCanNames)
+  --print("finished sorting")
   return itemCanNames, itemCanNameToInfo
+end
+
+local function sortedTableContains(tbl, el, fn)
+  if not fn then
+    fn = (function(a,b) return a == b end)
+  end
+  local startIncl = 1
+  local endExcl = #tbl + 1
+  while startIncl < endExcl do
+    local half = startIncl + math.floor((endExcl - startIncl)/2)
+    local item = tbl[half]
+    if fn(item, el) then
+      return half
+    elseif item < el then
+      startIncl = half+1
+    else
+      endExcl = half
+    end
+  end
+  return nil
+end
+
+function stateMachine:updateSpecificCanName(infoFn)
+  local itemCanNames = self.itemCanNames
+  local itemCanNameToInfo = self.itemCanNameToInfo
+  local canNamesToAdd = {}
+
+  local info = af.read(infoFn)
+  assert(info.name)
+
+  local prefix = info.name .. ":"
+  local findIdx = sortedTableContains(itemCanNames, prefix, startsWith)
+  if findIdx then
+    local s = findIdx
+    local e = findIdx+1
+    while s > 1 do
+      if not startsWith(itemCanNames[s-1], prefix) then
+        break
+      else
+        itemCanNameToInfo[itemCanNames[s-1]] = nil
+      end
+      s = s - 1
+    end
+    local icnLen = #itemCanNames
+    while e < icnLen do
+      if startsWith(itemCanNames[e], prefix) then
+        itemCanNameToInfo[itemCanNames[e]] = nil
+      else
+        break
+      end
+      e = e + 1
+    end
+  end
+  for _, name in ipairs(fs.list("db/items/" .. info.name)) do
+    local damageInfo = {
+      name = info.name,
+      stackSize = info.stackSize,
+      hasNBT = info.hasNBT
+    }
+    local fullName = "db/items/" .. info.name .. "/" .. name
+    local afName = string.sub(fullName, 1, -5)
+    local fileInfo = af.read(afName)
+    if info.damageDiffers then
+      damageInfo.stackSize = fileInfo.info.stackSize
+      damageInfo.hasNBT = fileInfo.info.hasNBT
+    end
+    damageInfo.damage = fileInfo.info.damage
+    damageInfo.cInfo = fileInfo
+    if damageInfo.hasNBT then
+      for _, ci in ipairs(fileInfo.chests) do
+        if ci.count ~= 0 then
+          local customInfo = mp.clone(damageInfo)
+          customInfo.customName = ci.customName
+          customInfo.ci = ci
+          customInfo.count = 1
+          assert(ci.customName)
+          local canName = customInfo.name .. ":" .. customInfo.damage .. ":" .. customInfo.customName
+          if not sortedTableContains(itemCanNames, canName) then
+            canNamesToAdd[#canNamesToAdd + 1] = canName
+          end
+          itemCanNameToInfo[canName] = customInfo
+        end
+      end
+    else
+      local count = 0
+      for _, ci in ipairs(fileInfo.chests) do
+        count = count + ci.count
+      end
+      damageInfo.count = count
+      local canName = damageInfo.name .. ":" .. damageInfo.damage .. ":"
+      if not sortedTableContains(itemCanNames, canName) then
+        canNamesToAdd[#canNamesToAdd + 1] = canName
+      end
+      itemCanNameToInfo[canName] = damageInfo
+    end
+  end
+  
+  local i = #itemCanNames + 1
+  for _, val in ipairs(canNamesToAdd) do
+    itemCanNames[i] = val
+    i = i + 1
+  end
+  table.sort(itemCanNames)
+end
+
+function stateMachine:updateCanNames()
+  sleep(0)
+  --print("calling...")
+  local itemCanNames, itemCanNameToInfo = canNameList()
+  --print("finished call")
+  sleep(0)
+  self.itemCanNames = itemCanNames
+  self.itemCanNameToInfo = itemCanNameToInfo
 end
 
 function stateMachine:s_startPos_queryItem(ev, key, ...)
@@ -897,16 +1016,58 @@ function stateMachine:s_startPos_queryItem(ev, key, ...)
 
     --okay, I just came up with this "canonical name"
     --minecraftid:damage:customname
-    local itemCanNames, itemCanNameToInfo = canNameList()
-    self.itemCanName = itemCanNames
-    self.itemCanNameToInfo = itemCanNameToInfo
+    local itemCanNames = self.itemCanNames
+    local itemCanNameToInfo = self.itemCanNameToInfo
     local results = {}
-    for _, canName in ipairs(itemCanNames) do
-      if starts_with(canName, v.searchStr) then
-        results[#results + 1] = canName
+    local startIncl = 1
+    local icnLen = #itemCanNames
+    local endExcl = icnLen + 1
+    while startIncl ~= endExcl do
+      local halfwayIdx = startIncl + math.floor((endExcl-startIncl)/2)
+      print("searching between "..startIncl.." and "..endExcl.." at "..halfwayIdx)
+      local item = itemCanNames[halfwayIdx]
+      if starts_with(item, v.searchStr) then
+        --we found it! search back and forth
+        print("found it, "..item)
+        if itemCanNameToInfo[item] then results[#results + 1] = item end
+        local idx = halfwayIdx -1
+        while true do
+          print("loop1 idx", idx)
+          if idx < 1 then break end
+          local item = itemCanNames[idx]
+          if starts_with(item, v.searchStr) then
+            if itemCanNameToInfo[item] then results[#results + 1] = item end
+          else
+            break
+          end
+          idx = idx - 1
+        end
+        local idx = halfwayIdx + 1
+        while true do
+          print("loop2 idx", idx)
+          if idx > icnLen then break end
+          local item = itemCanNames[idx]
+          if starts_with(item, v.searchStr) then
+            if itemCanNameToInfo[item] then results[#results + 1] = item end
+          else
+            break
+          end
+          idx = idx + 1
+        end
+        break
+      elseif v.searchStr < item then
+        endExcl = halfwayIdx
+      else
+        startIncl = halfwayIdx
       end
     end
+    --for _, canName in ipairs(itemCanNames) do
+    --  if starts_with(canName, v.searchStr) then
+    --    results[#results + 1] = canName
+    --  end
+    --end
     self.searchResults = results
+    print("found "..#results.." results")
     if #results == 0 then
       self.err = "No items found for " .. v.searchStr
       self:s_startPos_queryItem("start")
@@ -973,6 +1134,9 @@ function stateMachine:displayQuantity(v)
   clear()
   print(v.info.name .. " d" .. v.info.damage)
   print("stack: " .. v.stackSize)
+  --if v.stackSize > 1 and v.info.count > v.stackSize then
+  --  local
+  --  print("have: " .. v.info.count .. " / "
   print("have: " .. v.info.count)
   print("qty: " .. v.selectedQuantity)
 end
@@ -982,7 +1146,7 @@ function stateMachine:s_startPos_queryQuantity(ev, key, ...)
   if ev == "start" then
     assert(#self.searchResults == 1)
     self.currState = self.s_startPos_queryQuantity
-    v.selectedQuantity = 1
+    v.selectedQuantity = 0
     v.canName = self.searchResults[1]
     --print(inspect(self.itemCanNameToInfo))
     for k,v in pairs(self.itemCanNameToInfo) do
@@ -997,7 +1161,9 @@ function stateMachine:s_startPos_queryQuantity(ev, key, ...)
     assert(v.info.stackSize)
     self:displayQuantity(v)
   elseif ev == "key" and (key == keys.space or key == keys.enter) then
-    self:withdraw(v.selectedQuantity, v)
+    if v.selectedQuantity > 0 then
+      self:withdraw(v.selectedQuantity, v)
+    end
     self:s_startPos_waiting("start")
   elseif ev == "key" and (key == keys.up or key == keys.right or key == keys.equals) then
     v.selectedQuantity = v.selectedQuantity + 1
@@ -1060,6 +1226,7 @@ function stateMachine:checkInv()
               },
               chests = {}
             })
+            self:updateSpecificCanName(itemInfoFn)
           end
           if itemInfo.hasNBT then
             res[slot].haveAllInfo = not not self.slotNames[slot]
@@ -1297,6 +1464,7 @@ getGlobalOffset()
 
 moveTo(params.startingPos)
 
+stateMachine:updateCanNames()
 stateMachine:s_startPos_waiting("start")
 while true do
   local ev, r1, r2, r3, r4, r5 = os.pullEvent()

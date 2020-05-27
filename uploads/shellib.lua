@@ -6,6 +6,14 @@ function ends_with(str, ending)
    return ending == "" or str:sub(-#ending) == ending
 end
 
+function mod(a, b)
+  return math.fmod(math.fmod(a,b) + b, b)
+end
+
+function facingPlus(a, b)
+  return mod(a + b,4)
+end
+
 function die(msg)
   error("ERROR: "..(msg or "unspecified error"))
   while true do
@@ -35,7 +43,17 @@ setmetatable(turtle, {__index = backupTurtle})
 Location = {x = 0, y = 0, z = 0, facing = 0}
 GlobalOffset = {known = false, posPairs = {}}
 
-Settings = {ensureFuel = false}
+Settings = {ensureFuel = false, retry = 20}
+
+local function retry(fn, ...)
+  for _=1,Settings.retry+1 do
+    if fn(...) then
+      return true
+    end
+    sleep(1)
+  end
+  return false
+end
 
 function tryForward()
   ensureFuelIf()
@@ -58,7 +76,7 @@ function tryForward()
 end
 
 function forward()
-  if not tryForward() then
+  if not retry(tryForward) then
     error("unable to move forward")
   end
 end
@@ -84,7 +102,7 @@ function tryBack()
 end
 
 function back()
-  if not tryBack() then
+  if not retry(tryBack) then
     error("unable to move back")
   end
 end
@@ -99,7 +117,7 @@ function tryUp()
 end
 
 function up()
-  if not tryUp() then
+  if not retry(tryUp) then
    error("unable to move up")
   end
 end
@@ -114,7 +132,7 @@ function tryDown()
 end
 
 function down()
-  if not tryDown() then
+  if not retry(tryDown) then
     error("unable to move down")
   end
 end
@@ -134,14 +152,14 @@ end
 function turnLeft()
   -- from the docs http://www.computercraft.info/wiki/Turtle.turnLeft
   -- "Output 	true - the turtle cannot fail to turn left"
-  Location.facing = math.fmod(Location.facing + 3, 4)
+  Location.facing = facingPlus(Location.facing, -1)
   turtleTurnLeft()
 end
 
 function turnRight()
   -- from the docs http://www.computercraft.info/wiki/Turtle.turnRight
   -- "Output 	true - the turtle cannot fail to turn right"
-  Location.facing = math.fmod(Location.facing + 1, 4)
+  Location.facing = facingPlus(Location.facing, 1)
   turtleTurnRight()
 end
 
@@ -215,11 +233,22 @@ function getGlobalOffset(facing, timeout, gps_debug)
   end
   local first = {x = xPos, y = yPos, z = zPos}
   if not facing then
-    if not tryForward() then
+    local dir
+    if tryForward() then
+      dir = 1
+    elseif tryBack() then
+      dir = -1
+    else
       return false
     end
     local xPos, yPos, zPos = gps.locate(timeout, gps_debug)
-    back()
+    if dir == 1 then
+      back()
+    elseif dir == -1 then
+      forward()
+    else
+      assert(false)
+    end
     local second = {x = xPos, y = yPos, z = zPos}
     if not xPos then
       return false
@@ -227,24 +256,24 @@ function getGlobalOffset(facing, timeout, gps_debug)
     
     local globalFacing
     if first.y ~= second.y then
-      error("expected y coordinate to stay the same")
-    elseif (first.z - 1) == second.z and first.x == second.x then
+      error("expected y coordinate to stay the same, got "..first.y.." and "..second.y)
+    elseif (first.z - dir) == second.z and first.x == second.x then
       globalFacing = 0
-    elseif (first.x + 1) == second.x and first.z == second.z then
+    elseif (first.x + dir) == second.x and first.z == second.z then
       globalFacing = 1
-    elseif (first.z + 1) == second.z and first.x == second.x then
+    elseif (first.z + dir) == second.z and first.x == second.x then
       globalFacing = 2
-    elseif (first.x - 1) == second.x and first.z == second.z then
+    elseif (first.x - dir) == second.x and first.z == second.z then
       globalFacing = 3
     else
-      error("unexpected coordinates")
+      error("unexpected coordinates "..first.x..","..first.z.." "..second.x..","..second.z)
     end
     facing = globalFacing
   end
 
   assert(facing)
   assert(Location.facing)
-  local facingOffset = math.fmod((facing - Location.facing) + 4, 4)
+  local facingOffset = facingPlus(facing, -Location.facing)
   assert(facingOffset)
   GlobalOffset.facing = facingOffset
 
@@ -268,12 +297,21 @@ function globalPosition()
   local translatedLocation = translatePosition(GlobalOffset.facing)
   local globalPos = {}
 
-  globalPos.facing = math.fmod(Location.facing + GlobalOffset.facing, 4)
+  globalPos.facing = facingPlus(Location.facing, GlobalOffset.facing)
   globalPos.x = translatedLocation.x + GlobalOffset.x
   globalPos.y = translatedLocation.y + GlobalOffset.y
   globalPos.z = translatedLocation.z + GlobalOffset.z
 
   return globalPos
+end
+
+function facingDistance(a, b)
+  local mod = facingPlus(a, -b)
+  if mod == 3 then
+    return 1
+  else
+    return mod
+  end
 end
 
 function turnToFace(newFacing, preferLeft)
@@ -282,7 +320,7 @@ function turnToFace(newFacing, preferLeft)
   end
   local glob = globalPosition()
   local f = glob.facing
-  local mod = math.fmod((newFacing - f) + 4, 4)
+  local mod = facingPlus(newFacing, -f)
   if mod == 0 then
     --do nothing
   elseif mod == 1 then
