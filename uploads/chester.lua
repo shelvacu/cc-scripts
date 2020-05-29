@@ -247,6 +247,9 @@ local function walRecover(actualRecovery) -- actualRecovery: bool, whether or no
     local chestFn = "db/chests/"..wal.location.x..","..wal.location.y..","..wal.location.z
     local itemCFn = "db/items/"..wal.name.."/"..wal.damage..".c"
     if wal.type == "deposit" then
+      --textutils.pagedPrint(inspect(wal))
+      --print("actualRecovery:")
+      --print(actualRecovery)
       if turtle.getItemCount(wal.slot) > 0 then
         turtle.select(wal.slot)
         turtle.drop(wal.count)
@@ -479,6 +482,7 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     print("[w]ithdraw")
     print()
     print("fuel: " .. turtle.getFuelLevel())
+    print("chests free: " .. (#af.read("db/empty_chests")))
   elseif ev == "key" and key == keys.d then
     self:s_startPos_deposit("start")
   --elseif ev == "key" and key == keys.w then
@@ -1023,15 +1027,15 @@ function stateMachine:s_startPos_queryItem(ev, key, ...)
     local endExcl = icnLen + 1
     while startIncl ~= endExcl do
       local halfwayIdx = startIncl + math.floor((endExcl-startIncl)/2)
-      print("searching between "..startIncl.." and "..endExcl.." at "..halfwayIdx)
+      --print("searching between "..startIncl.." and "..endExcl.." at "..halfwayIdx)
       local item = itemCanNames[halfwayIdx]
       if starts_with(item, v.searchStr) then
         --we found it! search back and forth
-        print("found it, "..item)
+        --print("found it, "..item)
         if itemCanNameToInfo[item] then results[#results + 1] = item end
         local idx = halfwayIdx -1
         while true do
-          print("loop1 idx", idx)
+          --print("loop1 idx", idx)
           if idx < 1 then break end
           local item = itemCanNames[idx]
           if starts_with(item, v.searchStr) then
@@ -1043,7 +1047,7 @@ function stateMachine:s_startPos_queryItem(ev, key, ...)
         end
         local idx = halfwayIdx + 1
         while true do
-          print("loop2 idx", idx)
+          --print("loop2 idx", idx)
           if idx > icnLen then break end
           local item = itemCanNames[idx]
           if starts_with(item, v.searchStr) then
@@ -1101,7 +1105,7 @@ function stateMachine:drawItemList(selIdx)
     if idx < 1 or idx > #self.searchResults then
       print()
     else
-      print(bool2str(idx == selIdx, ">", " ") .. self.searchResults[idx])
+      print(bool2str(idx == selIdx, ">", " ") .. self.searchResults[idx] .. "-" .. self.itemCanNameToInfo[self.searchResults[idx]].count)
     end
   end
 end
@@ -1140,6 +1144,7 @@ function stateMachine:displayQuantity(v)
   --  print("have: " .. v.info.count .. " / "
   print("have: " .. v.info.count)
   print("qty: " .. v.selectedQuantity)
+  print("chests allocated: " .. #v.info.cInfo.chests)
 end
 
 function stateMachine:s_startPos_queryQuantity(ev, key, ...)

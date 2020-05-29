@@ -64,6 +64,7 @@ function exports.write(name, data)
   for _,v in ipairs(rawData) do
     f:write(v)
   end
+  --f:write(table.concat(rawData))
   f:close()
   fs.delete(oldName)
   fs.move(newName, oldName)
