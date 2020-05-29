@@ -68,6 +68,10 @@
 --   * write /items/<name>/<damage>.c
 --   * write WAL finished
 
+-- Known bugs:
+-- When withdrawing more than one stack, only one stack is marked in inventory (or something like that)
+-- When chests fill up, the last chest is not correctly allocated.
+
 --[[
 local debug = dofile"cooldebug.lua"
 debug.override()
@@ -237,7 +241,7 @@ local function moveTo(spot)
   turnToFace(spot.facing)
 end
 
-local function walRecover()
+local function walRecover(actualRecovery) -- actualRecovery: bool, whether or not we're actually recovering from an unexpected shutdown
   local wal = af.read("db/wal")
   if not wal.empty then
     local chestFn = "db/chests/"..wal.location.x..","..wal.location.y..","..wal.location.z
@@ -250,6 +254,7 @@ local function walRecover()
       local chestInfo
       if af.exists(chestFn) then
         chestInfo = af.read(chestFn)
+        assert(chestInfo.count == wal.chestCountBefore or actualRecovery)
       else
         error("Chest does not exist!")
       end
@@ -308,14 +313,20 @@ local function walRecover()
       end
       af.write("db/wal", {empty = true})
     elseif wal.type == "withdraw" then
+      --print(inspect(wal))
+      assert((turtle.getItemCount(wal.slot) == 0) or actualRecovery)
+      assert((wal.count <= wal.chestCountBefore) or actualRecovery)
       if turtle.getItemCount(wal.slot) == 0 then
         turtle.select(wal.slot)
         turtle.suck(wal.count)
       end
+      local actualCount = turtle.getItemCount(wal.slot)
       local chestInfo = af.read(chestFn)
+      --print(chestInfo.count)
+      assert((chestInfo.count == wal.chestCountBefore) or actualRecovery)
       if chestInfo.count == wal.chestCountBefore then
-        chestInfo.count = chestInfo.count - wal.count
-        if wal.chestCountBefore == wal.count then --this is a deallocation
+        chestInfo.count = chestInfo.count - actualCount
+        if chestInfo.count == 0 then --this is a deallocation
           chestInfo.name = nil
           chestInfo.damage = nil
           chestInfo.customName = nil
@@ -323,21 +334,28 @@ local function walRecover()
         af.write(chestFn, chestInfo)
       end
       local itemCInfo = af.read(itemCFn)
-      local modified = false
+      local found = false
+      local foundIdx = -1
       for i, ci in ipairs(itemCInfo.chests) do
         if
           locationEq(ci.location, wal.location) and
           ci.count == wal.chestCountBefore
         then
-          ci.count = ci.count - wal.count
-          modified = true
+          --ci.count = ci.count - actualCount
+          foundIdx = i
+          found = true
         end
       end
-      if modified then
+      if found then
+        if chestInfo.count == 0 then
+          table.remove(itemCInfo.chests, foundIdx)
+        else
+          itemCInfo.chests[foundIdx] = chestInfo
+        end
         af.write(itemCFn, itemCInfo)
         stateMachine:updateSpecificCanName("db/items/"..wal.name..".i")
       end
-      if wal.chestCountBefore == wal.count then --this is a deallocation
+      if chestInfo.count == 0 then --this is a deallocation
         local emptys = af.read("db/empty_chests")
         local found = false
         for i, ci in pairs(emptys) do
@@ -358,6 +376,7 @@ local function walRecover()
   end
 end
 
+-- return the index of the line in the info screen that should ask for the customName
 local function customName(info)
   if (info.damageDiffers and info.damageInfo.hasNBT) or ((not info.damageDiffers) and info.hasNBT) then
     if info.damageDiffers then
@@ -414,30 +433,6 @@ local function selectionsCount(info)
   return count
 end
 
-local function isNumeralKeyCode(key)
-  return false or
-    key == keys.zero or
-    key == keys.one or
-    key == keys.two or
-    key == keys.three or
-    key == keys.four or
-    key == keys.five or
-    key == keys.six or
-    key == keys.seven or
-    key == keys.eight or
-    key == keys.nine or
-    key == keys.numPad0 or
-    key == keys.numPad1 or
-    key == keys.numPad2 or
-    key == keys.numPad3 or
-    key == keys.numPad4 or
-    key == keys.numPad5 or
-    key == keys.numPad6 or
-    key == keys.numPad7 or
-    key == keys.numPad8 or
-    key == keys.numPad9
-end
-
 local function getCharFromNumeralKeyCode(key)
   if key == keys.zero or key == keys.numPad0 then
     return "0"
@@ -462,6 +457,10 @@ local function getCharFromNumeralKeyCode(key)
   else
     return nil
   end
+end
+
+local function isNumeralKeyCode(key)
+  return not not getCharFromNumeralKeyCode(key)
 end
 
 function stateMachine:s_startPos(ev, key)
@@ -512,24 +511,7 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
   end
 end
 
-function stateMachine:withdraw(howMany, v, slot)
-  local chestLocation
-  local chestCountBefore
-  local count
-  local slot = slot or 1
-  assert(howMany == 1 or not v.info.ci)
-  clear()
-  print("working...")
-  if v.info.ci then
-    chestLocation = v.info.ci.location
-    chestCountBefore = 1
-    count = 1
-  else
-    assert(#v.cInfo.chests > 0)
-    chestLocation = v.cInfo.chests[1].location
-    chestCountBefore = v.cInfo.chests[1].count
-    count = math.min(chestCountBefore, howMany, v.stackSize)
-  end
+function chestAccessLocation(chestLocation)
   local destLocation = {
     y = chestLocation.y
   }
@@ -547,7 +529,28 @@ function stateMachine:withdraw(howMany, v, slot)
     destLocation.z = chestLocation.z
     destLocation.facing = 1 --east, +x
   end
-  --locationAddInto(destLocation, params.startingPos) 
+  return destLocation
+end
+
+function stateMachine:withdraw(howMany, v, slot)
+  local chestLocation
+  local chestCountBefore
+  local count
+  local slot = slot or 1
+  assert(howMany == 1 or not v.info.ci)
+  clear()
+  print("working...")
+  if v.info.ci then -- if .ci is set then this is a hasNBT/customName item, and the chest should only have one and we can only grab one at a time
+    chestLocation = v.info.ci.location
+    chestCountBefore = 1
+    count = 1
+  else
+    assert(#v.cInfo.chests > 0)
+    chestLocation = v.cInfo.chests[1].location
+    chestCountBefore = v.cInfo.chests[1].count
+    count = math.min(chestCountBefore, howMany, v.stackSize)
+  end
+  local destLocation = chestAccessLocation(chestLocation)
   moveTo(destLocation)
   --oh my god, we did it
   --we're in front of the chest, ready.
@@ -570,113 +573,109 @@ function stateMachine:withdraw(howMany, v, slot)
   }
   assert(wal.damage)
   assert(wal.name)
+  assert(turtle.getItemCount(wal.slot) == 0)
   af.write("db/wal", wal)
-  -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
-  walRecover()
+  -- I don't know if this is genius or idiotic, but recovering from the wal is nearly the same as performing some action normally, so...
+  walRecover(false)
+  self:updateSpecificCanName("db/items/" .. v.info.name .. ".i")
+  assert(self.itemCanNameToInfo[v.canName])
+  v.info = self.itemCanNameToInfo[v.canName]
+  v.cInfo = v.info.cInfo
+  v.stackSize = v.info.stackSize
   if howMany > count and slot < 16 then
+    -- need to update v's chestInfos!
     self:withdraw(howMany - count, v, slot + 1)
   else
     moveTo(params.startingPos)
   end
 end
 
+function forEveryDeposit(slotNames)
+  for slot=1,16 do
+    local turtleItemInfo = turtle.getItemDetail(slot)
+    if turtleItemInfo then --normally I'd do `if not turtleItemInfo then continue end` but lua doesn't have continue because fuck lua
+      local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
+      local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
+      local chestIdx = nil
+      local stackSize
+      local hasNBT
+      if itemInfo.damageDiffers then
+        stackSize = itemCInfo.info.stackSize
+        hasNBT = itemCInfo.info.hasNBT
+      else
+        stackSize = itemInfo.stackSize
+        hasNBT = itemInfo.hasNBT
+      end
+      local maxCount = 9 * 3 * stackSize
+      local customName = nil
+      if hasNBT then
+        if slotNames then
+          customName = slotNames[slot]
+        else
+          assert(false)
+        end
+      end
+      local chestLocation
+      local chestCountBefore
+      if not hasNBT then
+        for i, val in ipairs(itemCInfo.chests) do
+          --todo: potentially split a deposit into multiple pieces
+          if val.count + turtleItemInfo.count <= maxCount then
+            chestLocation = val.location
+            chestCountBefore = val.count
+            break
+          end
+        end
+      end
+      if not chestLocation then
+        local emptys = af.read("db/empty_chests")
+        if #emptys == 0 then
+          moveTo(params.startingPos)
+          error("no chests available!")
+        end
+        chestLocation = emptys[1].location
+        chestCountBefore = 0
+      end
+      local destLocation = chestAccessLocation(chestLocation)
+      moveTo(destLocation)
+      --oh my god, we did it
+      --we're in front of the chest, ready.
+      --about to deposit the master's glorious items.
+      --stack of cobblestone #7,853 may you be deposited well
+      --in today and in tommorow, forever organized
+      --for our master
+      --amen
+      local wal = {
+        type = "deposit",
+        --location = globalPosition(),
+        location = chestLocation,
+        name = turtleItemInfo.name,
+        damage = turtleItemInfo.damage,
+        slot = slot,
+        count = turtleItemInfo.count,
+        chestCountBefore = chestCountBefore,
+        customName = customName,
+        empty = false
+      }
+      af.write("db/wal", wal)
+      -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
+      walRecover(false)
+    end
+  end
+end
+      
 function stateMachine:s_forEvery(ev, direction, ...)
   if ev == "start" then
-    assert(direction == "deposit" or direction == "withdraw")
     self.currState = self.s_forEvery
-    --self.v_forEvery.idx = 1
     clear()
+    assert(direction == "deposit")
     print("working...")
-    for slot=1,16 do
-      local turtleItemInfo = turtle.getItemDetail(slot)
-      if turtleItemInfo then --normally I'd do `if not turtleItemInfo then continue end` but lua doesn't have continue because fuck lua
-        local itemInfo  = af.read("db/items/" .. turtleItemInfo.name .. ".i")
-        local itemCInfo = af.read("db/items/" .. turtleItemInfo.name .. "/" .. turtleItemInfo.damage .. ".c")
-        local chestIdx = nil
-        local stackSize
-        local hasNBT
-        if itemInfo.damageDiffers then
-          stackSize = itemCInfo.info.stackSize
-          hasNBT = itemCInfo.info.hasNBT
-        else
-          stackSize = itemInfo.stackSize
-          hasNBT = itemInfo.hasNBT
-        end
-        local maxCount = 9 * 3 * stackSize
-        local customName = nil
-        if hasNBT then
-          customName = self.slotNames[slot]
-        end
-        local chestLocation
-        local chestCountBefore
-        if not hasNBT then
-          for i, val in ipairs(itemCInfo.chests) do
-            --todo: potentially split a deposit into multiple pieces
-            if val.count + turtleItemInfo.count <= maxCount then
-              chestLocation = val.location
-              chestCountBefore = val.count
-              break
-            end
-          end
-        end
-        if not chestLocation then
-          local emptys = af.read("db/empty_chests")
-          if #emptys == 0 then
-            moveTo(params.startingPos)
-            error("no chests available!")
-          end
-          chestLocation = emptys[1].location
-          chestCountBefore = 0
-        end
-        local destLocation = {
-          y = chestLocation.y
-        }
-        local bound = boundingBox(params)
-        if chestLocation.x == bound.lnw.x then
-          destLocation.x = chestLocation.x + 1
-          destLocation.z = chestLocation.z
-          destLocation.facing = 3 --west, -x
-        elseif chestLocation.z == bound.lnw.z then
-          destLocation.x = chestLocation.x
-          destLocation.z = chestLocation.z + 1
-          destLocation.facing = 0 --north, -z
-        else
-          destLocation.x = chestLocation.x - 1
-          destLocation.z = chestLocation.z
-          destLocation.facing = 1 --east, +x
-        end
-        --locationAddInto(destLocation, params.startingPos) 
-        moveTo(destLocation)
-        --oh my god, we did it
-        --we're in front of the chest, ready.
-        --about to deposit the master's glorious items.
-        --stack of cobblestone #7,853 may you be deposited well
-        --in today and in tommorow, forever organized
-        --for our master
-        --amen
-        local wal = {
-          type = "deposit",
-          --location = globalPosition(),
-          location = chestLocation,
-          name = turtleItemInfo.name,
-          damage = turtleItemInfo.damage,
-          slot = slot,
-          count = turtleItemInfo.count,
-          chestCountBefore = chestCountBefore,
-          customName = customName,
-          empty = false
-        }
-        af.write("db/wal", wal)
-        -- I don't know if this is genius or idiotic, but recovering from the wal is the same as performing some action normally, so...
-        walRecover()
-      end
-    end
+    forEveryDeposit(self.slotNames)
     moveTo(params.startingPos)
     self.slotsNames = {}
     self:s_startPos("start")
   end
 end
-      
    
 function stateMachine:s_startPos_deposit(ev, key, ...)
   if ev == "start" then
@@ -1151,10 +1150,10 @@ function stateMachine:s_startPos_queryQuantity(ev, key, ...)
     v.selectedQuantity = 0
     v.canName = self.searchResults[1]
     --print(inspect(self.itemCanNameToInfo))
-    for k,v in pairs(self.itemCanNameToInfo) do
-      print(k)
-    end
-    print(v.canName)
+    --for k,v in pairs(self.itemCanNameToInfo) do
+    --  print(k)
+    --end
+    --print(v.canName)
     assert(self.itemCanNameToInfo[v.canName])
     v.info = self.itemCanNameToInfo[v.canName]
     v.cInfo = v.info.cInfo
@@ -1365,6 +1364,27 @@ if tArgs[1] == "init" then
   af.write("db/params", params)
   print("Init finished.")
   return
+elseif tArgs[1] == "audit" then -- !!! WARNING !!! destructive command
+  local params = af.read("db/params")
+  local oldAuditNumber = params.auditNumber or 0
+  local newAuditNumber = oldAuditNumber + 1
+  for _,fn1 in ipairs(fs.list("db/items")) do
+    local fullFn = "db/items/" .. fn1
+    if fs.isDir(fullFn) then
+      for _,fn2 in ipairs(fs.list(fullFn)) do
+        local fullFn = "db/items/" .. fn1 .. "/" .. fn2
+        local afName = string.sub(fullFn,1,-5)
+        local itemCInfo = af.read(afName)
+        itemCInfo.chests = {}
+        af.write(afName, itemCInfo)
+      end
+    end
+  end
+
+  params.auditNumber = newAuditNumber
+  params.doAudit = true
+  af.write("db/params", params)
+  return
 elseif tArgs[1] == "expand" then
   if not tArgs[4] then
     print("3 arguments required for 'expand' (4 total)")
@@ -1449,7 +1469,7 @@ end
 
 params = af.read("db/params")
 
-walRecover()
+walRecover(true)
 
 -- todo: return to spot maybe
 
@@ -1467,6 +1487,125 @@ getGlobalOffset()
 moveTo(params.startingPos)
 
 stateMachine:updateCanNames()
+if params.doAudit then
+  --precondition for audit: Must clear chest assignments in db/items/*/*.c
+  assert(params.auditNumber)
+  assert(turtle.getItemCount() == 0)
+  local auditNumber = params.auditNumber
+  local emptys = af.read("db/empty_chests")
+  local newEmptys = {}
+  for _,cInfo in ipairs(emptys) do
+    if cInfo.audit == nil or cInfo.audit < auditNumber then
+      moveTo(chestAccessLocation(cInfo.location))
+      local suc, data = turtle.inspect()
+      assert(suc and data.name == "minecraft:chest")
+      local suc, err = turtle.suck()
+      if suc then
+        --fail! This chest is not empty
+        turtle.drop() --put back what we just took out
+        --don't add it to newEmptys
+      elseif not suc and err == "No items to take" then
+        --good, chest is empty as expected
+        local newChestInfo = {
+          audit = auditNumber,
+          count = 0,
+          location = cInfo.location
+        }
+
+        af.write("db/chests/" .. cInfo.location.x .. "," .. cInfo.location.y .. "," .. cInfo.location.z, newChestInfo)
+        newEmptys[#newEmptys + 1] = newChestInfo
+      else
+        --other error we didn't expect
+        print(err)
+        assert(false)
+      end
+    else
+      newEmptys[#newEmptys + 1] = cInfo
+    end
+  end
+
+  af.write("db/empty_chests", newEmptys)
+  emptys = newEmptys
+  if #emptys == 0 then
+    error("No empty chests available")
+  end
+  local chestFns = fs.list("db/chests")
+  local chestFnsLen = #chestFns
+  for i,fn in ipairs(chestFns) do
+    print(i .. "/" .. chestFnsLen)
+    local afn = "db/chests/" .. string.sub(fn,1,-5) --remove the ".old" or ".new" at the end
+    local cInfo = af.read(afn)
+    if cInfo.audit == nil or cInfo.audit < auditNumber then
+      local chestEmpty = false
+      local accLocation = chestAccessLocation(cInfo.location)
+      while not chestEmpty do
+        moveTo(accLocation)
+        while true do
+          local suc, err = turtle.suck()
+          if suc then
+            --do nothing
+          elseif not suc and err == "No space for items" then
+            break
+          elseif not suc and err == "No items to take" then
+            chestEmpty = true
+            break
+          else
+            print(err)
+            assert(false)
+          end
+        end
+        for i=1,16 do
+          turtle.select(i)
+          if turtle.getItemCount() ~= 0 then
+            local turtleInfo = turtle.getItemDetail()
+            local itemFn = "db/items/" .. turtleInfo.name .. ".i"
+            local damageFn = "db/items/" .. turtleInfo.name .. "/" .. turtleInfo.damage .. ".c"
+            local itemInfo   = af.exist(itemFn)   and af.read(itemFn)
+            local damageInfo = af.exist(damageFn) and af.read(damageFn)
+            --print(inspect(itemInfo))
+            --print(inspect(damageInfo))
+            local keepItem = itemInfo and damageInfo and (not itemInfo.hasNBT) and (not damageInfo.hasNBT)
+            if not keepItem then
+              local disposalChestLocation = {
+                x = params.startingPos.x,
+                y = params.startingPos.y,
+                z = params.startingPos.z,
+                facing = facingPlus(params.startingPos.facing, 3)
+              }
+              moveTo(disposalChestLocation)
+              while true do --drop all items in this slot
+                local suc, err = turtle.drop()
+                if suc then
+                  --do nothing, keep going
+                elseif err == "No items to drop" then
+                  break
+                else 
+                  error(err)
+                end
+              end
+            end
+          end
+        end
+        forEveryDeposit(false)
+      end
+      -- chest is now definitely empty
+      local newChestInfo = {
+        audit = auditNumber,
+        count = 0,
+        location = cInfo.location
+      }
+      af.write("db/chests/" .. cInfo.location.x .. "," .. cInfo.location.y .. "," .. cInfo.location.z, newChestInfo)
+      local emptys = af.read("db/empty_chests")
+      emptys[#emptys + 1] = newChestInfo
+      af.write("db/empty_chests", emptys)
+    end
+  end
+  print("AUDIT FINISHED!")
+  params.doAudit = false
+  af.write("db/params", params)
+  return
+end
+
 stateMachine:s_startPos_waiting("start")
 while true do
   local ev, r1, r2, r3, r4, r5 = os.pullEvent()
