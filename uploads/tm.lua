@@ -221,8 +221,9 @@ local function doTheDig(dir)
       bi.name == "minecraft:water" or
       bi.name == "minecraft:lava" or
       bi.name == "minecraft:dirt" or
+      bi.name == "minecraft:gravel" or
       bi.name == "minecraft:obsidian" or
-      bi.name == "minecraft:monster_egg" or
+      bi.name == "minecraft:monster_egg" or -- blocks that spawn endermites
       bi.name == "minecraft:torch"
     then
       turtle[digNames[dir]]()
