@@ -28,6 +28,13 @@ offset 3
 -z  +z
   -x
 
+starNav facing
+     2
+    -z
+1 -x  +x 3
+    +z
+     0
+
 api: http.post(url, data)
 wget http://10.4.5.17:4567/uploader u
 
@@ -157,3 +164,5 @@ cure 2 zombie villagers
 lots of villagers to trade with
 
 END PORTAL: -226 31 819
+
+skele spawner: -286 12 241

@@ -131,6 +131,13 @@ while true do
       sleep(waitTime)
       print("starting next round")
     elseif bi.name == "minecraft:log" then
+      if outOfSaplings() then
+        print("out of saplings!")
+        while outOfSaplings() do
+          sleep(1)
+        end
+        print("starting again, thanks for the saplings bro")
+      end
       turtle.select(2)
       turtle.dig()
       forward()

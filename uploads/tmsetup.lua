@@ -1,5 +1,5 @@
 local dims = 64
-local down = 500 -- very large basically means to bedrock
+local down = -500 -- very large basically means to bedrock
 
 require"shellib"
 local af = require"atomicFile"
