@@ -166,3 +166,6 @@ lots of villagers to trade with
 END PORTAL: -226 31 819
 
 skele spawner: -286 12 241
+
+AtomicTaco's base:
+-636 63 283
