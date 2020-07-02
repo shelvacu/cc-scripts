@@ -201,11 +201,11 @@ local function doTheDig(dir)
     makeInventoryNotFull()
     --print("doing the dig "..dir)
     local suc, bi = turtle[inspectNames[dir]]()
-    if suc and bi.name == "minecraft:lava" and bi.state.level == 0 then --lava source block
+    if suc and (bi.name == "minecraft:lava" or bi.name == "minecraft:flowing_lava") and bi.state.level == 0 then --lava source block
       turtle.select(1)
       turtle[placeNames[dir]]()
       starNav.update[dir]()
-    elseif not suc then
+    elseif (not suc) or bi.name == "minecraft:lava" or bi.name == "minecraft:flowing_lava" or bi.name == "minecraft:water" or bi.name == "minecraft:flowing_water" then
       break
     elseif --(not suc) or
       bi.name == "minecraft:stone" or
@@ -223,6 +223,7 @@ local function doTheDig(dir)
       bi.name == "minecraft:rail" or
       bi.name == "minecraft:water" or
       bi.name == "minecraft:lava" or
+      bi.name == "minecraft:flowing_lava" or
       bi.name == "minecraft:dirt" or
       bi.name == "minecraft:gravel" or
       bi.name == "minecraft:obsidian" or
