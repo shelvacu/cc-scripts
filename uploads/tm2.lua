@@ -232,6 +232,10 @@ local function doTheDig(dir)
     then
       turtle[digNames[dir]]()
       starNav.update[dir]()
+    elseif bi.name == "minecraft:bedrock" and dir == "down" then
+      --we can ignore bedrock below, this will be the last layer
+      starNav.update[dir]()
+      break
     else
       print("unrecognized block " .. bi.name)
       --moveToXZ(params.startingPos)

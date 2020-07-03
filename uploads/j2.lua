@@ -1,14 +1,21 @@
 require "shellib"
 local inspect = require "inspect"
 
+local tArgs = {...}
+local fh
+if #tArgs > 0 then
+  fh = assert(io.open(tArgs[1], "a"))
+end
+
 local function help()
   print("WASD: horizontal movement and turning")
   print("Q/E: Up/Down")
   print("R/F/V: Dig up/forward/down")
   print("I/K/M: inspect up/forward/down")
   print("J: inspect item in inventory")
-  print(".: quit")
   print("L: location data")
+  print("P: print location to file")
+  print(".: quit")
   print("?: this help message")
 end
 help()
@@ -39,8 +46,17 @@ while true do
   elseif key == "m" or key == "," then
     print(inspect({turtle.inspectDown()}))
   elseif key == "j" then
-    print(inspect(turtle.getItemDetail()))
+    print(inspect(turtle.getItemDetail(1, true)))
+  elseif key == "p" then
+    if not fh then
+      print("specify fn")
+      return
+    end
+    local globalPos = globalPosition()
+    fh:write("  {" .. globalPos.x .. "," .. globalPos.y .. "," .. globalPos.z .. "," .. globalPos.facing .. "},\n")
+    print("written")
   elseif key == "." then
+    if fh then fh:close() end
     return
   elseif key == "l" then
     print("Local coords:")
