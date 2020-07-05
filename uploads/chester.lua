@@ -80,8 +80,9 @@ debug.override()
 require "shellib"
 local inspect = require"inspect"
 Settings.ensureFuel = true
-local mp = require "mp"
+local mp = require "mpConcat"
 local af = require "atomicFile"
+local t = require "timings"
 
 local stateMachine = {
   v_startPos = {
@@ -167,6 +168,10 @@ local function moveTo(spot)
     return
   end
 
+  if not params then
+    textutils.pagedPrint(debug.traceback())
+    error""
+  end
   while true do
     local glob = globalPosition()
     if glob.y < params.startingPos.y then
@@ -242,6 +247,7 @@ local function moveTo(spot)
 end
 
 local function walRecover(actualRecovery) -- actualRecovery: bool, whether or not we're actually recovering from an unexpected shutdown
+  t.start("walRecover")
   local wal = af.read("db/wal")
   if not wal.empty then
     local chestFn = "db/chests/"..wal.location.x..","..wal.location.y..","..wal.location.z
@@ -303,14 +309,18 @@ local function walRecover(actualRecovery) -- actualRecovery: bool, whether or no
         -- this is an allocation
         local emptys = af.read("db/empty_chests")
         local foundIdx
+        t.start("iteremptys")
         for i,v in ipairs(emptys) do
           if locationEq(v.location, wal.location) then
             foundIdx = i
             break
           end
         end
+        t.finish()
         if foundIdx then
+          t.start("removeemptys")
           table.remove(emptys, foundIdx)
+          t.finish()
         end
         af.write("db/empty_chests", emptys)
       end
@@ -377,6 +387,7 @@ local function walRecover(actualRecovery) -- actualRecovery: bool, whether or no
       die("unrecognized WAL type")
     end
   end
+  t.finish()
 end
 
 -- return the index of the line in the info screen that should ask for the customName
@@ -912,6 +923,7 @@ local function sortedTableContains(tbl, el, fn)
 end
 
 function stateMachine:updateSpecificCanName(infoFn)
+  t.start("updateSpecificCanName "..infoFn)
   local itemCanNames = self.itemCanNames
   local itemCanNameToInfo = self.itemCanNameToInfo
   local canNamesToAdd = {}
@@ -992,6 +1004,7 @@ function stateMachine:updateSpecificCanName(infoFn)
     i = i + 1
   end
   table.sort(itemCanNames)
+  t.finish()
 end
 
 function stateMachine:updateCanNames()
@@ -1402,7 +1415,7 @@ elseif tArgs[1] == "expand" then
     print("all arguments must be numbers")
     return
   end
-  local params = af.read("db/params")
+  params = af.read("db/params")
   if forwards < params.forwards or rights < params.rights or downs < params.downs then
     print("size must be same or larger in all directions")
     return
