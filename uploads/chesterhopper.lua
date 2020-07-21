@@ -1,46 +1,58 @@
-local stateMachine = {}
+local enabled = (redstone.getInput("back") and redstone.getInput("bottom"))
+os.queueEvent("tick")
+print("start")
 
-function stateMachine:off(ev, r1, r2)
-  if ev == "tick" then
+local function hopper()
+  while true do
+    os.sleep()
     turtle.suckUp()
-  elseif ev == "redstone" then
-    if redstone.getInput("right") and redstone.getInput("bottom") then
-      self.currState = self.on
-    end
-  end
-end
-
-function stateMachine:on(ev)
-  if ev == "tick" then
-    turtle.suckUp()
-    turtle.dropDown() 
-    if turtle.getItemCount() == 0 then
-      local selected = turtle.getSelectedSlot()
-      if selected == 16 then
-        turtle.select(1)
-      else
-        turtle.select(selected + 1)
+    turtle.suck()
+    if enabled then
+      turtle.dropDown()
+      if turtle.getItemCount() == 0 then
+        local selected = turtle.getSelectedSlot()
+        if selected == 16 then
+          turtle.select(1)
+        else
+          turtle.select(selected + 1)
+        end
       end
     end
-  elseif ev == "redstone" then
-    if not (redstone.getInput("right") and redstone.getInput("bottom")) then
-      self.currState = self.off
-    end
   end
 end
 
-stateMachine.currState = stateMachine.off
+local function watchRedstone()
+  while true do
+    os.sleep()
+    os.pullEvent("redstone")
+    enabled = (redstone.getInput("back") and redstone.getInput("bottom"))
+  end
+end
 
-local timerId = os.startTimer(0)
+parallel.waitForAll(hopper, watchRedstone)
+
+--[[
 while true do
   local ev, r1, r2, r3, r4, r5 = os.pullEvent()
-  if ev == "timer" and r1 == timerId then
-    ev = "tick"
-  end
+  if not ev == "tick" then print("event "..ev) end
 
-  stateMachine:currState(ev, r1, r2, r3, r4, r5)
-
-  if ev == "tick" then
-    timerId = os.startTimer(0)
+  if ev == "redstone" then
+    enabled = (redstone.getInput("right") and redstone.getInput("bottom"))
+    os.queueEvent("tick")
+  elseif ev == "tick" then
+    turtle.suckUp()
+    if enabled then
+      turtle.dropDown()
+      if turtle.getItemCount() == 0 then
+        local selected = turtle.getSelectedSlot()
+        if selected == 16 then
+          turtle.select(1)
+        else
+          turtle.select(selected + 1)
+        end
+      end
+    end
+    os.queueEvent("tick")
   end
 end
+--]]

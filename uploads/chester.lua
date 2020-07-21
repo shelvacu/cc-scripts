@@ -69,7 +69,6 @@
 --   * write WAL finished
 
 -- Known bugs:
--- When withdrawing more than one stack, only one stack is marked in inventory (or something like that)
 -- When chests fill up, the last chest is not correctly allocated.
 
 --[[
@@ -494,10 +493,15 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     print()
     print("fuel: " .. turtle.getFuelLevel())
     print("chests free: " .. (#af.read("db/empty_chests")))
+    redstone.setOutput("top", true)
   elseif ev == "key" and key == keys.d then
+    redstone.setOutput("top", false)
+    os.sleep()
     self:s_startPos_deposit("start")
   --elseif ev == "key" and key == keys.w then
   elseif ev == "char" and key == "w" then
+    redstone.setOutput("top", false)
+    os.sleep()
     self:s_startPos_queryItem("start")
   elseif ev == "turtle_inventory" then
     local haveEvery, itemInfos = self:checkInv()
@@ -520,6 +524,8 @@ function stateMachine:s_startPos_waiting(ev, key, ...)
     os.autoInvTimer = os.startTimer(2)
   elseif ev == "timer" and key == os.autoInvTimer then
     os.autoInvTimer = nil
+    redstone.setOutput("top", false)
+    os.sleep(1)
     self:s_forEvery("start", "deposit")
   else
     self:s_startPos(ev, key, ...)
@@ -545,6 +551,30 @@ function chestAccessLocation(chestLocation)
     destLocation.facing = 1 --east, +x
   end
   return destLocation
+end
+
+function stateMachine:withdrawLavas()
+  local fuel = turtle.getFuelLevel()
+  local max = turtle.getFuelLimit()
+  local fuelDiff = max-fuel
+  local buckets = math.floor(fuelDiff/1000)
+  if buckets < 8 then return end
+  buckets = math.min(buckets, 16)
+  for i=1,buckets do
+    local v = {}
+    v.canName = "minecraft:lava_bucket:0:"
+    v.info = self.itemCanNameToInfo[v.canName]
+    v.cInfo = v.info.cInfo
+    v.stackSize = v.info.stackSize
+    self:withdraw(1, v, i)
+    turtle.select(i)
+    turtle.refuel()
+  end
+  for i=2,16 do
+    turtle.select(i)
+    turtle.transferTo(2)
+  end
+  forEveryDeposit({})
 end
 
 function stateMachine:withdraw(howMany, v, slot)
@@ -686,6 +716,7 @@ function stateMachine:s_forEvery(ev, direction, ...)
     assert(direction == "deposit")
     print("working...")
     forEveryDeposit(self.slotNames)
+    self:withdrawLavas()
     moveTo(params.startingPos)
     self.slotsNames = {}
     self:s_startPos("start")

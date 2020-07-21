@@ -162,7 +162,7 @@ local function messagePackImpl(val)
       iters = 0
       for idx, val in ipairs(val) do
         appendArray(res, {messagePackImpl(val)})
-        sleep(0)
+        if math.fmod(iters, 1024) == 0 then os.sleep() end
         iters = iters + 1
       end
       if iters ~= len then
@@ -176,7 +176,7 @@ local function messagePackImpl(val)
       for k,v in pairs(val) do
         appendArray(res, {messagePackImpl(k)})
         appendArray(res, {messagePackImpl(v)})
-        sleep(0)
+        if math.fmod(iters, 1024) == 0 then os.sleep() end
         len = len + 1
       end
       if len <= 15 then

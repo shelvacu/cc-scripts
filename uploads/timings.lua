@@ -10,14 +10,14 @@ return {
       print(string.rep("++",#shelTimings) .. "S " .. name)
       shelTimings[#shelTimings + 1] = {
         name = name,
-        startAt = os.time(),
+        startAt = os.epoch("utc"),
         otherwiseTimed = 0.0
       }
     end
   end,
   finish = function()
     if timings.enable then
-      local endAt = os.time()
+      local endAt = os.epoch("utc")
       local info = shelTimings[#shelTimings]
       shelTimings[#shelTimings] = nil
       local dur = endAt - info.startAt

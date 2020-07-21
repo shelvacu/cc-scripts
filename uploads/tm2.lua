@@ -228,7 +228,8 @@ local function doTheDig(dir)
       bi.name == "minecraft:gravel" or
       bi.name == "minecraft:obsidian" or
       bi.name == "minecraft:monster_egg" or -- blocks that spawn endermites
-      bi.name == "minecraft:torch"
+      bi.name == "minecraft:torch" or
+      bi.name == "minecraft:end_stone"
     then
       turtle[digNames[dir]]()
       starNav.update[dir]()

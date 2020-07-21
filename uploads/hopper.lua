@@ -15,7 +15,7 @@ while true do
   if inventoryHasEmptySlot() then
     --print"suck"
     turtle.suckUp()
-    sleep(0.1)
+    sleep()
   end
   if turtle.detectDown() then
     --print"drop"

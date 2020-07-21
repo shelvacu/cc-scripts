@@ -67,7 +67,7 @@ local function forward()
     elseif facing == 3 then
       x = x - 1
     else
-      print( "FUCK" )
+      error( "FUCK" )
     end
     return true
   else
@@ -96,19 +96,27 @@ local function turnRight()
 end
 
 local function outOfSaplings()
-  local deets = turtle.getItemDetail(1)
-  if not deets then
-    return true
+  for i=1,16 do
+    local deets = turtle.getItemDetail(i)
+    if deets and deets.name == "minecraft:sapling" and deets.count > 0 then
+      return false
+    end
   end
-  if deets.name == "minecraft:sapling" and deets.count > 0 then
-    return false
-  end
-  
   return true
 end
 
+local function selectSapling()
+  for i=1,16 do
+    local deets = turtle.getItemDetail(i)
+    if deets and deets.name == "minecraft:sapling" then
+      turtle.select(i)
+      break
+    end
+  end
+end
+
 while true do
-  turtle.select(1)
+  selectSapling()
   turtle.suckDown()
   local success, bi = turtle.inspect()
   if not success then
@@ -119,11 +127,18 @@ while true do
     elseif bi.name == "minecraft:dirt" then
       turnLeft()
     elseif bi.name == "minecraft:chest" then
-      local slot = 2
-      while slot <= 16 do 
-        turtle.select(slot)
-        turtle.drop()
-        slot = slot + 1
+      -- local slot = 2
+      -- while slot <= 16 do 
+      --   turtle.select(slot)
+      --   turtle.drop()
+      --   slot = slot + 1
+      -- end
+      for i=1,16 do
+        local deets = turtle.getItemDetail(i)
+        if deets and deets.name ~= "minecraft:sapling" then
+          turtle.select(i)
+          turtle.drop()
+        end
       end
       turnLeft()
       turnLeft()
@@ -136,9 +151,9 @@ while true do
         while outOfSaplings() do
           sleep(1)
         end
+        selectSapling()
         print("starting again, thanks for the saplings bro")
       end
-      turtle.select(2)
       turtle.dig()
       forward()
       turtle.digDown()
@@ -148,9 +163,9 @@ while true do
         while outOfSaplings() do
           sleep(1)
         end
+        selectSapling()
         print("starting again, thanks for the saplings bro")
       end
-      turtle.select(1)
       turtle.placeDown()
       while true do 
         local suc, bi = turtle.inspectUp()
