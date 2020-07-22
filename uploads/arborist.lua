@@ -126,6 +126,9 @@ while true do
       turnRight()
     elseif bi.name == "minecraft:dirt" then
       turnLeft()
+    elseif bi.name == "minecraft:leaves" then
+      turtle.dig()
+      forward()
     elseif bi.name == "minecraft:chest" then
       -- local slot = 2
       -- while slot <= 16 do 

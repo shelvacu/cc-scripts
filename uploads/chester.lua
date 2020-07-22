@@ -79,7 +79,7 @@ debug.override()
 require "shellib"
 local inspect = require"inspect"
 Settings.ensureFuel = true
-local mp = require "mpConcat"
+local mp = require "mp"
 local af = require "atomicFile"
 local t = require "timings"
 

@@ -99,6 +99,7 @@ function compute(distanceFunction, start, goal)
 	openGoalSet:insert(goal, distance(start, goal))
 
 	local yieldCount = 0
+  local innerYieldCount = 0
 	local activeOpenSet, pendingOpenSet = openStartSet, openGoalSet
 	local forwardSearch, lastNode, switch = true, false, false
 	
@@ -113,7 +114,7 @@ function compute(distanceFunction, start, goal)
 		--yield every so often to avoid getting timed out
 		yieldCount = yieldCount + 1
 		if yieldCount > 200 then
-			os.pullEvent(os.queueEvent("yield"))
+      os.sleep()
 			yieldCount = 0
 		end
 
@@ -130,6 +131,12 @@ function compute(distanceFunction, start, goal)
 		currNode[3], currNode[5], switch = true, false, true
 			
 		for _, neighbour in ipairs(adjacent(current)) do
+
+      innerYieldCount = innerYieldCount + 1
+      if innerYieldCount > 1000 then
+        os.sleep()
+        innerYieldCount = 0
+      end
 			
 			baseCost = distanceFunc(current, neighbour)
 			if baseCost < math.huge then -- if not graph:get(neighbour) then

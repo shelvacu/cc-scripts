@@ -205,6 +205,8 @@ local function doTheDig(dir)
       turtle.select(1)
       turtle[placeNames[dir]]()
       starNav.update[dir]()
+    -- TODO elseif suc and (bi.name == "minecraft:water" or bi.name == "minecraft:flowing_water") and bi.state.level == 0 then
+      --remove the water
     elseif (not suc) or bi.name == "minecraft:lava" or bi.name == "minecraft:flowing_lava" or bi.name == "minecraft:water" or bi.name == "minecraft:flowing_water" then
       break
     elseif --(not suc) or
