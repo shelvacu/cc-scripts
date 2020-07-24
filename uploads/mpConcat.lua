@@ -14,7 +14,7 @@ local function appendArray(t1, t2) -- chapter 32 of "why doesn't lua have this?"
     len = len + 1
   end
 end
--- [[
+
 local hexChars = {
   "0",
   "1",
@@ -35,16 +35,16 @@ local hexChars = {
 }
 
 function hexDump(data)
-  local res = ""
+  local res = {}
   for i=1,#data do
     local by = string.byte(data, i)
     local upper = bit.blogic_rshift(by, 4)
     local lower = bit.band(by, 0x0f)
-    res = res .. hexChars[upper+1] .. hexChars[lower+1]
+    res[(i*2)] = hexChars[upper+1]
+    res[(i*2)+1] = hexChars[lower+1]
   end
-  return res
+  return table.concat(res)
 end
--- ]]
 
 local mp = {}
 
@@ -143,7 +143,8 @@ local function messagePackImpl(val)
     end
     return prefix .. val
   elseif ty == "table" then
-    if val[1] then --assume array-like table
+    local mt = getmetatable(val)
+    if type(mt) == "table" and mt.isSequence then --assume array-like table
       local len = #val
       local prefix
       if len <= 15 then
@@ -210,7 +211,6 @@ local function messagePack(data)
 end
 
 mp.pack = messagePack
-mp.packArr = messagePackImpl
 
 local messageUnpack = nil
 
@@ -279,6 +279,7 @@ local function unpackArray(len, data)
     end
     res[i] = value
   end
+  setmetatable(res,{isSequence = true})
   return res, remaining
 end
 
@@ -297,7 +298,7 @@ local function signed(unsigned, bits)
   end
 end
 
-messageUnpack = function(data)
+local function messageUnpack(data)
   local remaining = data
   local first = string.byte(string.sub(data, 1, 1))
   if not first then
