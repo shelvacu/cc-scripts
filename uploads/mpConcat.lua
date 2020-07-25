@@ -1,49 +1,10 @@
--- my attempt at implementing messagepack
+local vstruct = require"vstruct"
 
--- print(messageUnpack(messagePack("abc")))
+local f4 = vstruct.compile("f4")
+local f8 = vstruct.compile("f8")
 
 local function isInt(n)
   return math.floor(n) == n and n < 2^64 and -(2^63) < n
-end
-
--- modifies `t1` in place
-local function appendArray(t1, t2) -- chapter 32 of "why doesn't lua have this?"
-  local len = #t1
-  for i=1,#t2 do
-    t1[len+1] = t2[i]
-    len = len + 1
-  end
-end
-
-local hexChars = {
-  "0",
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "a",
-  "b",
-  "c",
-  "d",
-  "e",
-  "f",
-}
-
-function hexDump(data)
-  local res = {}
-  for i=1,#data do
-    local by = string.byte(data, i)
-    local upper = bit.blogic_rshift(by, 4)
-    local lower = bit.band(by, 0x0f)
-    res[(i*2)] = hexChars[upper+1]
-    res[(i*2)+1] = hexChars[lower+1]
-  end
-  return table.concat(res)
 end
 
 local mp = {}
@@ -111,7 +72,7 @@ local function messagePackImpl(val)
         )
       end
     else -- float
-      error("floats are not supported")
+      return string.char(0xcb) .. f8:write{val}
     end
   elseif ty == "nil" then
     return string.char(0xc0)
@@ -164,8 +125,6 @@ local function messagePackImpl(val)
       local res = {}
       iters = 0
       for idx, val in ipairs(val) do
-        --appendArray(res, {messagePackImpl(val)})
-        --res = res .. messagePackImpl(val)
         res[iters+1] = messagePackImpl(val)
         if math.fmod(iters,1000) == 0 then sleep(0) end
         iters = iters + 1
@@ -179,8 +138,6 @@ local function messagePackImpl(val)
       local prefix
       local res = {} 
       for k,v in pairs(val) do
-        --appendArray(res, {messagePackImpl(k)})
-        --appendArray(res, {messagePackImpl(v)})
         res[(len*2)+1] = messagePackImpl(k)
         res[(len*2)+2] = messagePackImpl(v)
         --sleep(0)
@@ -298,13 +255,12 @@ local function signed(unsigned, bits)
   end
 end
 
-local function messageUnpack(data)
-  local remaining = data
+messageUnpack = function(data)
   local first = string.byte(string.sub(data, 1, 1))
   if not first then
     return nil, nil
   end
-  remaining = string.sub(data, 2, -1)
+  local remaining = string.sub(data, 2, -1)
   if first < 2^7 then
     return first, remaining
   elseif first < 0x90 then --fixmap, last 4 bits
@@ -338,8 +294,20 @@ local function messageUnpack(data)
     return unpackStr(len, remaining)
   elseif first < 0xca then --extensions, blegh
     error("ext not supported")
-  elseif first < 0xcc then --floats, blegh
-    error("floats not supported")
+  elseif first == 0xca then
+    local res = {}
+    if #remaining < 4 then
+      return nil,nil
+    end
+    f4:read(remaining, res)
+    return res[1], string.sub(remaining,5,-1)
+  elseif first == 0xcb then
+    local res = {}
+    if #remaining < 8 then
+      return nil, nil
+    end
+    f8:read(remaining, res)
+    return res[1], string.sub(remaining,9,-1)
   elseif first == 0xcc then
     return unpack8(remaining)
   elseif first == 0xcd then
@@ -413,7 +381,8 @@ end
 mp.unpack = messageUnpack
 
 local function clone(data)
-  return mp.unpack(mp.pack(data))
+  local res = {mp.unpack(mp.pack(data))}
+  return res[1]
 end
 
 mp.clone = clone

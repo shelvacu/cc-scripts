@@ -12,6 +12,10 @@ function Connection:new(url)
   return conn
 end
 
+function Connection:default()
+  return self:new("ws://127.0.0.1:7648/")
+end
+
 function Connection:process()
   local data, isBinary = self.internal.receive()
   while data do

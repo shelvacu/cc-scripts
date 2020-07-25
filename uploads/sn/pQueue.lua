@@ -66,6 +66,7 @@ local methods = {
 
 	contains = function(self, element, compFunc)
 		for index, entry in ipairs(self) do
+      if math.fmod(index,1024) == 0 then os.sleep() end
 			if (compFunc and compFunc(entry[1], element)) or entry[1] == element then
 				return index
 			end
