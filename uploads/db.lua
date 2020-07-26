@@ -2,6 +2,8 @@ local mp = require"mp"
 
 local Connection = {msgid_inc = 1}
 
+local conn_id = 1
+
 function Connection:new(url)
   local conn = setmetatable({}, {__index = self})
   local res = {http.websocket(url)}
@@ -9,6 +11,8 @@ function Connection:new(url)
     error(res[2])
   end
   conn.internal = res[1]
+  conn.id = conn_id
+  conn_id = conn_id + 1
   return conn
 end
 
@@ -21,13 +25,14 @@ function Connection:process()
   while data do
     --print(textutils.serialise{address=address, dataLen=#data, isBinary=isBinary})
     local parsed = mp.unpack(data)
+    --print("got some data "..textutils.serialise(parsed))
     local message_name
     if data.ty == "notification" then
       message_name = "database_notification"
     else
       message_name = "database_message"
     end
-    os.queueEvent(message_name, self, parsed)
+    os.queueEvent(message_name, self.id, parsed)
     data, isBinary = self.internal.receive()
   end
 end
@@ -37,14 +42,17 @@ function Connection:query(q, params)
   local msgid = self.msgid_inc
   self.msgid_inc = msgid + 1
   setmetatable(params, {isSequence = true})
+  --print"sending"
   self.internal.send(mp.pack{ty = "query", statement = q, params = params, msgid = msgid}, true)
+  --print"sent; waiting"
   while true do
-    local evName, connection, msg = os.pullEvent("database_message")
-    if connection == self and (msg.ty == "results" or msg.ty == "error") and msg.msgid == msgid then
+    local evName, connid, msg = os.pullEvent("database_message")
+    --print("got ev " .. evName .. " ids " .. textutils.serialise{self.id,connid} .. " msg " .. textutils.serialise(msg) .. " othereq " .. textutils.serialise(msg.msgid == msgid))
+    if self.id == connid and (msg.ty == "results" or msg.ty == "error") and msg.msgid == msgid then
       if msg.ty == "results" then
-        return true, msg.rows
+        return msg.rows
       elseif msg.ty == "error" then
-        return false, msg.msg
+        error(msg.msg)
       end
     end
   end
@@ -55,12 +63,12 @@ function Connection:prepare(q)
   self.msgid_ic = msgid + 1
   self.internal.send(mp.pack{ty = "prepare", statement = q, msgid = msgid}, true)
   while true do
-    local evName, connection, msg = os.pullEvent("database_message")
-    if connection == self and (msg.ty == "prepared" or msg.ty == "error") and msg.msgid == msgid then
+    local evName, connid, msg = os.pullEvent("database_message")
+    if connid == self.id and (msg.ty == "prepared" or msg.ty == "error") and msg.msgid == msgid then
       if msg.ty == "prepared" then
-        return true, msg.id
+        return msg.id
       elseif msg.ty == "error" then
-        return false, msg.msg
+        error(msg.msg)
       end
     end
   end
