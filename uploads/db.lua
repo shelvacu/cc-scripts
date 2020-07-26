@@ -10,6 +10,7 @@ function Connection:new(url)
   if not res[1] then
     error(res[2])
   end
+  conn.address = url
   conn.internal = res[1]
   conn.id = conn_id
   conn_id = conn_id + 1
@@ -21,20 +22,35 @@ function Connection:default()
 end
 
 function Connection:process()
-  local data, isBinary = self.internal.receive()
-  while data do
-    --print(textutils.serialise{address=address, dataLen=#data, isBinary=isBinary})
-    local parsed = mp.unpack(data)
-    --print("got some data "..textutils.serialise(parsed))
-    local message_name
-    if data.ty == "notification" then
-      message_name = "database_notification"
-    else
-      message_name = "database_message"
+  while true do
+    local evName, address, data, isBinary = os.pullEvent("websocket_message")
+    --print(address)
+    if address == self.address then
+      local parsed = mp.unpack(data)
+      local message_name
+      if data.ty == "notification" then
+        message_name = "database_notification"
+      else
+        message_name = "database_message"
+      end
+      os.queueEvent(message_name, self.id, parsed)
     end
-    os.queueEvent(message_name, self.id, parsed)
-    data, isBinary = self.internal.receive()
   end
+      
+  -- local data, isBinary = self.internal.receive()
+  -- while data do
+  --   --print(textutils.serialise{address=address, dataLen=#data, isBinary=isBinary})
+  --   local parsed = mp.unpack(data)
+  --   --print("got some data "..textutils.serialise(parsed))
+  --   local message_name
+  --   if data.ty == "notification" then
+  --     message_name = "database_notification"
+  --   else
+  --     message_name = "database_message"
+  --   end
+  --   os.queueEvent(message_name, self.id, parsed)
+  --   data, isBinary = self.internal.receive()
+  -- end
 end
 
 function Connection:query(q, params)
@@ -64,6 +80,7 @@ function Connection:prepare(q)
   self.internal.send(mp.pack{ty = "prepare", statement = q, msgid = msgid}, true)
   while true do
     local evName, connid, msg = os.pullEvent("database_message")
+    print(msg.ty)
     if connid == self.id and (msg.ty == "prepared" or msg.ty == "error") and msg.msgid == msgid then
       if msg.ty == "prepared" then
         return msg.id
