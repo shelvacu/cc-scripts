@@ -1,0 +1,29 @@
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.item-img {
+  align-self: start;
+  width: 32px;
+  height: 32px;
+  margin-right: 5px;
+  image-rendering: crisp-edges;
+}
+
+.select2-container--default .select2-results > .select2-results__options {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.iteminfo {
+  padding: 5px;
+  border-bottom: 1px solid grey;
+}
+
+/*body { height: 100%; margin: 0; padding: 10px; }*/

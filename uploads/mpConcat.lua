@@ -1,15 +1,24 @@
 local vstruct = require"vstruct"
+local unicode = require"unicode"
 
-local f4 = vstruct.compile("f4")
-local f8 = vstruct.compile("f8")
+local f4 = vstruct.compile(">f4")
+local f8 = vstruct.compile(">f8")
 
 local function isInt(n)
   return math.floor(n) == n and n < 2^64 and -(2^63) < n
 end
 
+-- Config docs
+-- recode:bool
+--   when true: convert CC -> unicode when packing and unicode -> CC when unpacking
+--   default: no conversion
+-- convertNull:bool
+--   when true: converts any CC nulls to U+2400 "symbol for null" on pack. Has no effect on unpack, or when recode is false
+--   default: no conversion
+
 local mp = {}
 
-local function messagePackImpl(val)
+local function messagePackImpl(val, config)
   local ty = type(val)
   if ty == "number" then
     if isInt(val) then
@@ -83,6 +92,9 @@ local function messagePackImpl(val)
       return string.char(0xc2)
     end
   elseif ty == "string" then
+    if config.recode and not unicode.symmetric(val) then
+      val = unicode.convertToUnicode(val, config.convertNull)
+    end
     local len = #val
     local prefix
     if len <= 31 then
@@ -105,6 +117,9 @@ local function messagePackImpl(val)
     return prefix .. val
   elseif ty == "table" then
     local mt = getmetatable(val)
+    --if type(mt) == "table" then
+    --  print("mt:"..textutils.serialise(mt))
+    --end
     if type(mt) == "table" and mt.isSequence then --assume array-like table
       local len = #val
       local prefix
@@ -123,9 +138,9 @@ local function messagePackImpl(val)
       end
       --local res = prefix
       local res = {}
-      iters = 0
+      local iters = 0
       for idx, val in ipairs(val) do
-        res[iters+1] = messagePackImpl(val)
+        res[iters+1] = messagePackImpl(val,config)
         if math.fmod(iters,1000) == 0 then sleep(0) end
         iters = iters + 1
       end
@@ -133,13 +148,18 @@ local function messagePackImpl(val)
         error("malformed array-like table")
       end
       return prefix .. table.concat(res)
+    elseif type(mt) == "table" and mt.isConfigWrapper then
+      local newconfig = setmetatable(val.newConfig, {__index = config})
+      --print("configwrapped, new config: "..textutils.serialise(newconfig))
+      --print("inner: "..textutils.serialise(val.val))
+      return messagePackImpl(val.val, newconfig)
     else -- assume hashmap-like table
       local len = 0
       local prefix
       local res = {} 
       for k,v in pairs(val) do
-        res[(len*2)+1] = messagePackImpl(k)
-        res[(len*2)+2] = messagePackImpl(v)
+        res[(len*2)+1] = messagePackImpl(k, config)
+        res[(len*2)+2] = messagePackImpl(v, config)
         --sleep(0)
         len = len + 1
       end
@@ -163,8 +183,11 @@ local function messagePackImpl(val)
   end
 end
 
-local function messagePack(data)
-  return messagePackImpl(data) --table.concat({messagePackImpl(data)})
+local function messagePack(data, config)
+  if config == nil then
+    config = {}
+  end
+  return messagePackImpl(data, config) --table.concat({messagePackImpl(data)})
 end
 
 mp.pack = messagePack
@@ -210,27 +233,27 @@ local function unpack64(data)
     string.byte(data, 8), string.sub(data, 9, -1)
 end
 
-local function unpackMap(len, data)
+local function unpackMap(len, data, config)
   local remaining = data
   local res = {}
   for i=1,len do
     local key
     local value
-    key, remaining = messageUnpack(remaining)
+    key, remaining = messageUnpack(remaining, config)
     if not remaining then return end
-    value, remaining = messageUnpack(remaining)
+    value, remaining = messageUnpack(remaining, config)
     if not remaining then return end
     res[key] = value
   end
   return res, remaining
 end
 
-local function unpackArray(len, data)
+local function unpackArray(len, data, config)
   local remaining = data
   local res = {}
   for i=1,len do
     local value
-    value, remaining = messageUnpack(remaining)
+    value, remaining = messageUnpack(remaining, config)
     if not remaining then
       return nil, nil
     end
@@ -240,11 +263,15 @@ local function unpackArray(len, data)
   return res, remaining
 end
 
-local function unpackStr(len, data)
+local function unpackStr(len, data, bin, config)
   if #data < len then
     return nil, nil
   end
-  return string.sub(data, 1, len), string.sub(data, len+1, -1)
+  local res = string.sub(data, 1, len)
+  if not bin and config.recode and not unicode.symmetric(val) then
+    res = unicode.convertToCC(res)
+  end
+  return res, string.sub(data, len+1, -1)
 end
 
 local function signed(unsigned, bits)
@@ -255,7 +282,10 @@ local function signed(unsigned, bits)
   end
 end
 
-messageUnpack = function(data)
+messageUnpack = function(data, config)
+  if config == nil then
+    config = {}
+  end
   local first = string.byte(string.sub(data, 1, 1))
   if not first then
     return nil, nil
@@ -264,11 +294,11 @@ messageUnpack = function(data)
   if first < 2^7 then
     return first, remaining
   elseif first < 0x90 then --fixmap, last 4 bits
-    return unpackMap(bit.band(first, 0x0f), remaining)
+    return unpackMap(bit.band(first, 0x0f), remaining, config)
   elseif first < 0xa0 then --fixarray, last 4
-    return unpackArray(bit.band(first, 0x0f), remaining)
+    return unpackArray(bit.band(first, 0x0f), remaining, config)
   elseif first < 0xc0 then --fixstr, last 5
-    return unpackStr(bit.band(first, 0x1f), remaining)
+    return unpackStr(bit.band(first, 0x1f), remaining, false, config)
   elseif first == 0xc0 then
     return nil, remaining
   elseif first == 0xc1 then
@@ -281,27 +311,27 @@ messageUnpack = function(data)
     local len
     len, remaining = unpack8(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, true, config)
   elseif first == 0xc5 then --bin16
     local len
     len, remaining = unpack16(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, true, config)
   elseif first == 0xc6 then --bin32
     local len
     len, remaining = unpack32(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, true, config)
   elseif first < 0xca then --extensions, blegh
     error("ext not supported")
-  elseif first == 0xca then
+  elseif first == 0xca then --float 32bit/4byte
     local res = {}
     if #remaining < 4 then
       return nil,nil
     end
     f4:read(remaining, res)
     return res[1], string.sub(remaining,5,-1)
-  elseif first == 0xcb then
+  elseif first == 0xcb then --float 64bit/8byte
     local res = {}
     if #remaining < 8 then
       return nil, nil
@@ -342,37 +372,37 @@ messageUnpack = function(data)
     local len
     len, remaining = unpack8(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, false, config)
   elseif first == 0xda then
     local len
     len, remaining = unpack16(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, false, config)
   elseif first == 0xdb then
     local len
     len, remaining = unpack32(remaining)
     if not remaining then return end
-    return unpackStr(len, remaining)
+    return unpackStr(len, remaining, false, config)
   elseif first == 0xdc then
     local len
     len, remaining = unpack16(remaining)
     if not remaining then return end
-    return unpackArray(len, remaining)
+    return unpackArray(len, remaining, config)
   elseif first == 0xdd then
     local len
     len, remaining = unpack32(remaining)
     if not remaining then return end
-    return unpackArray(len, remaining)
+    return unpackArray(len, remaining, config)
   elseif first == 0xde then
     local len
     len, remaining = unpack16(remaining)
     if not remaining then return end
-    return unpackMap(len, remaining)
+    return unpackMap(len, remaining, config)
   elseif first == 0xdf then
     local len
     len, remaining = unpack32(remaining)
     if not remaining then return end
-    return unpackMap(len, remaining)
+    return unpackMap(len, remaining, config)
   else -- 0xe0 <= first <= 0xff
     return signed(bit.band(first, 0x1f), 5), remaining
   end
@@ -386,5 +416,9 @@ local function clone(data)
 end
 
 mp.clone = clone
+
+mp.configWrapper = function(val, config)
+  return setmetatable({val = val, newConfig = config}, {isConfigWrapper = true})
+end
 
 return mp

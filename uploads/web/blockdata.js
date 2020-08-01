@@ -1,0 +1,1 @@
+../../gamepedia/lib.js

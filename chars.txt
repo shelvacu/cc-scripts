@@ -1,0 +1,73 @@
+0: U+0000 null
+1: U+263A white smiling face
+2: U+263B black smiling face
+3: U+2665 black heart suit
+4: U+2666 black diamond suit
+5: U+2663 black club suit
+6: U+2660 black spade suit
+7: U+2022 bullet
+8: U+25D8 inverse bullet
+9: U+0009 tab
+10: U+000A newline
+11: U+2642 male sign
+12: U+2640 female sign
+13: U+000D carriage return
+14: U+266A eighth note
+15: U+266B beamed eighth notes
+16: U+25B6 black right-pointing triangle
+17: U+25C0 black left-pointing triangle
+18: U+2B0D up down black arrow
+19: U+203C double exclamation mark
+20: U+E001 private
+21: U+E002 private
+22: U+2582 lower one quarter block ?
+23: U+21A8 up down arrow with base
+24: U+2191 upwards arrow
+25: U+2193 downwards arrow
+26: U+2192 rightwards arrow
+27: U+2190 leftwards arrow
+28: U+2319 turned not sign ?
+29: U+2B0C left right black arrow
+30: U+25B2 black up-pointing triangle
+31: U+25BC black down-pointing triangle
+#32: =
+#33: =
+#...
+#126: =
+127: U+2592 medium shade
+128: U+2800 braille pattern blank
+129: U+2801 braille pattern dots-1
+130: U+2808 braille pattern dots-4
+131: U+2809 braille pattern dots-14
+132: U+2802 braille pattern dots-2
+133: U+2803 braille pattern dots-12
+134: U+280A braille pattern dots-24
+135: U+280B braille pattern dots-124
+136: U+2810 braille pattern dots-5
+137: U+2811 braille pattern dots-15
+138: U+2818 braille pattern dots-45
+139: U+2819 braille pattern dots-145
+140: U+2812 braille pattern dots-25
+141: U+2813 braille pattern dots-125
+142: U+281A braille pattern dots-245
+143: U+281B braille pattern dots-1245
+144: U+2804 braille pattern dots-3
+145: U+2805 braille pattern dots-13
+146: U+280C braille pattern dots-34
+147: U+280D braille pattern dots-134
+148: U+2806 braille pattern dots-23
+149: U+2807 braille pattern dots-123
+150: U+280E braille pattern dots-234
+151: U+280F braille pattern dots-1234
+152: U+2814 braille pattern dots-35
+153: U+2815 braille pattern dots-135
+154: U+281C braille pattern dots-345
+155: U+281D braille pattern dots-1345
+156: U+2816 braille pattern dots-235
+157: U+2817 braille pattern dots-1235
+158: U+281F braille pattern dots-2345
+159: U+2820 braille pattern dots-12345
+#160: = U+00A0 no-break space
+#161: =
+#...
+#255: =

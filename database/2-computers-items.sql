@@ -18,7 +18,9 @@ create table item (
   damage int not null,
   maxDamage int not null,
   rawName text not null,
-  nbtHash text,
+  -- goddammit postgres https://stackoverflow.com/questions/23449207/postgres-unique-constraint-not-enforcing-uniqueness
+  -- if no hash is present, set to empty string
+  nbtHash text not null,
   fullMeta jsonb not null
 );
 
@@ -33,5 +35,7 @@ create table stack (
 );
 
 create index on stack(item_id);
-create index on item(name,nbtHash);
+create unique index item_fungible on item(name,damage,nbtHash);
 create index on chest(ty);
+--create unique index item_fungible_nonbt on item(name,damage) where nbtHash is null;
+--create unique index item_fungible_nbt on item(name,damage,nbtHash) where nbtHash is not null;

@@ -1,0 +1,33 @@
+aq: Aqua Affinity
+ba: Bane of Arthropods
+bp: Blast Protection
+cb: Curse of Binding
+cv: Curse of Vanishing
+ds: Depth Strider
+ef: Efficiency
+ff: Feather Falling
+fa: Fire Aspect
+fp: Fire Protection
+fl: Flame
+fw: Frost Walker
+in: Infinity
+kb: Knockback
+lo: Looting
+ls: Luck of the Sea
+lu: Lure
+me: Mending
+ms: Multishot
+pi: Piercing
+po: Power
+pp: Projectile Protection
+pr: Protection
+pu: Punch
+qc: Quick Charge
+re: Respiration
+sh: Sharpness
+st: Silk Touch
+sm: Smite
+ss: Soul Speed
+sw: Sweeping Edge
+th: Thorns
+ub: Unbreaking

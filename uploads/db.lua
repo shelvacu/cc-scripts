@@ -18,7 +18,7 @@ function Connection:new(url)
 end
 
 function Connection:default()
-  return self:new("ws://127.0.0.1:7648/")
+  return self:new("ws://10.244.65.57:7648/")
 end
 
 function Connection:process()
@@ -28,7 +28,13 @@ function Connection:process()
     if address == self.address then
       local parsed = mp.unpack(data)
       local message_name
-      if data.ty == "notification" then
+      --print(#data)
+      --print(textutils.serialise(parsed))
+      if parsed.ty == "error" and parsed.id == nil then
+        error("Error from server: " .. parsed.msg)
+      end
+      if parsed.ty == "notification" then
+        --print("got notification " .. textutils.serialise(parsed))
         message_name = "database_notification"
       else
         message_name = "database_message"
@@ -57,7 +63,9 @@ function Connection:query(q, params)
   if params == nil then params = {} end
   local msgid = self.msgid_inc
   self.msgid_inc = msgid + 1
-  setmetatable(params, {isSequence = true})
+  if getmetatable(params) == nil then
+    setmetatable(params, {isSequence = true})
+  end
   --print"sending"
   self.internal.send(mp.pack{ty = "query", statement = q, params = params, msgid = msgid}, true)
   --print"sent; waiting"
