@@ -169,3 +169,6 @@ skele spawner: -286 12 241
 
 AtomicTaco's base:
 -636 63 283
+
+End city:
+-266 127 1933
