@@ -214,68 +214,43 @@ function formatItem(item) {
     return res;
   }
 
-  //console.log(item);
-  //let imgSrc = "items/" + item.fullMeta.name.replace("minecraft:","") + ".png"
   let imgSrc = itemImg(item.fullMeta.name, item.damage);
-  //let res = $(`<div class="flex-row iteminfo" id="item-${item.id}">`);
   let res = document.createElement("div");
   res.classList.add("flex-row","iteminfo");
   res.id = `item-${item.id}`;
-  //let img = $('<img class="item-img">').attr("src", imgSrc);
   let img = document.createElement("img");
   img.classList.add("item-img");
   img.src = imgSrc;
-  //img.appendTo(res);
   res.appendChild(img);
-  //let infoBox = $('<div class="flex-col" style="flex-grow: 1">');
   let infoBox = document.createElement("div");
   infoBox.classList.add("flex-col");
   infoBox.style = "flex-grow: 1";
-  //infoBox.appendTo(res);
   res.appendChild(infoBox);
-  //let topInfo = $('<span>');
   let topInfo = document.createElement("span");
-  //topInfo.appendTo(infoBox);
   infoBox.appendChild(topInfo);
-  //$('<b>').text(item.fullMeta.displayName).appendTo(topInfo);
   let boldName = document.createElement("b");
   boldName.textContent = item.fullMeta.displayName;
   topInfo.appendChild(boldName);
-  //let qtySelector = $('<span>').hide();
   let qtySelector = document.createElement("span");
   qtySelector.style.display = "none";
-  //qtySelector.appendTo(topInfo);
   topInfo.appendChild(qtySelector);
   let max = Math.min(item.count, 27*stackSize);
-  //let qtyInput = $(`<input type="number" value="1" style="width:5em" min="1" max="${max}">`);
   let qtyInput = document.createElement("input");
   qtyInput.type = "number";
   qtyInput.value = 1;
   qtyInput.style.width = "5em";
   qtyInput.min = 1;
   qtyInput.max = max;
-  //qtyInput.appendTo(qtySelector);
   qtySelector.appendChild(qtyInput);
-  //let qtyEq = $('<span>');
   let qtyEq = document.createElement("span");
-  //qtyEq.appendTo(qtySelector);
   qtySelector.appendChild(qtyEq);
   function mkButton(text) { let btn = document.createElement("button"); btn.type = "button"; btn.textContent = text; qtySelector.appendChild(btn); return btn; }
-  //let qtyMulStack = $('<button type="button">xS</button>');
-  //qtyMulStack.appendTo(qtySelector);
-  //let qtyAddStack = $('<button type="button">+S</button>');
-  //qtyAddStack.appendTo(qtySelector);
-  //let qtyDelStack = $('<button type="button">-S</button>');
-  //qtyDelStack.appendTo(qtySelector);
   let qtyMulStack = mkButton("xS");
   let qtyAddStack = mkButton("+S");
   let qtyDelStack = mkButton("-S");
   function updateEq() {
-    //qtyEq.text(formatCount(parseInt(qtyInput.val()), stackSize, true));
     qtyEq.textContent = formatCount(parseInt(qtyInput.value), stackSize, true);
   }
-  //qtyInput.on('change', updateEq);
-  //qtyInput.on('input', updateEq);
   qtyInput.addEventListener('change', updateEq);
   qtyInput.addEventListener('input' , updateEq);
   function changeQty(fn) {
@@ -283,35 +258,23 @@ function formatItem(item) {
     let newVal = fn(oldVal);
     newVal = Math.min(max, newVal);
     newVal = Math.max(0, newVal);
-    //qtyInput.val(newVal);
     qtyInput.value = newVal;
     updateEq();
   }
-  //qtyMulStack.on('click', function(){ changeQty(n => n*stackSize) });
-  //qtyAddStack.on('click', function(){ changeQty(n => n+stackSize) });
-  //qtyDelStack.on('click', function(){ changeQty(n => n-stackSize) });
   qtyMulStack.addEventListener('click', function(){ changeQty(n => n*stackSize) });
   qtyAddStack.addEventListener('click', function(){ changeQty(n => n+stackSize) });
   qtyDelStack.addEventListener('click', function(){ changeQty(n => n-stackSize) });
   if (stackSize == 1) {
-    //qtyMulStack.hide();
-    //qtyAddStack.hide();
-    //qtyDelStack.hide();
     qtyMulStack.style.display = "none";
     qtyAddStack.style.display = "none";
     qtyDelStack.style.display = "none";
   }
-  //let removeButton = $('<button type="button">X</button>');
   let removeButton = document.createElement("button");
   removeButton.type = "button";
   removeButton.textContent = "X";
-  //removeButton.appendTo(topInfo);
   topInfo.appendChild(removeButton);
-  //removeButton.hide();
   removeButton.style.display = "none";
-  //removeButton.on('click', function(){ selected.delete(item.id); res.remove(); search($("#search").val()) });
   removeButton.addEventListener("click", function(){ selected.delete(item.id); res.parentElement.removeChild(res); search(document.getElementById("search").value); });
-  //$('<div>').text("Have: " + formatCount(item.count, stackSize)).appendTo(infoBox);
   let haveQty = document.createElement("div");
   haveQty.textContent = "Have: " + formatCount(item.count, stackSize);
   infoBox.appendChild(haveQty);
@@ -319,7 +282,6 @@ function formatItem(item) {
   if (item.fullMeta.maxDamage > 0) {
     descriptionText += " — D" + item.damage;
   }
-  //let extendedDesc = $('<span>');
   let extendedDesc = document.createElement("span");
   if (item.fullMeta.enchantments) {
     extendedDesc.textContent = " — ";
@@ -332,28 +294,17 @@ function formatItem(item) {
       } else {
         shortcode = enchData[0];
       }
-      //descriptionText += shortcode + ench.level + " ";
-      //$('<abbr>').attr("title", ench.fullName).text(shortcode + ench.level).appendTo(extendedDesc);
       let enchEl = document.createElement("abbr");
       enchEl.title = ench.fullName;
       enchEl.textContent = shortcode + ench.level;
       extendedDesc.appendChild(enchEl);
-      //$(new Text(" ")).appendTo(extendedDesc);
       extendedDesc.appendChild(new Text(" "));
     }
   }
-  //$('<div>').text(descriptionText).append(extendedDesc).appendTo(infoBox);
   let thing = document.createElement("div");
   thing.textContent = descriptionText;
   thing.appendChild(extendedDesc);
   infoBox.appendChild(thing);
-  // res.on('click', function(){
-  //   res.appendTo($("#selections"));
-  //   if(item.count > 1) qtySelector.show();
-  //   removeButton.show();
-  //   selected.add(item.id);
-  //   res.off('click');
-  // });
   res.addEventListener('click', function(){
     document.getElementById("selections").appendChild(res);
     if(item.count > 1) qtySelector.style.display = "";
@@ -366,13 +317,11 @@ function formatItem(item) {
 
 function search(query) {
   let results = searchSql(query, 1);
-  let resultsEl = /*$("#results")*/ document.getElementById("results");
+  let resultsEl = document.getElementById("results");
   results.then(results => {
-    //resultsEl.empty();
     resultsEl.innerHTML = "";
     for(let r of results) {
       if(!selected.has(r.id)) { 
-        //formatItem(r).appendTo(resultsEl);
         let el = formatItem(r);
         resultsEl.appendChild(el);
       }
@@ -381,16 +330,6 @@ function search(query) {
 }
 
 $(document).ready(function() {
-  /*$("#bla").select2({
-    ajax: {
-      transport: selectTransport
-    },
-    multiple: true,
-    closeOnSelect: false,
-    scrollAfterSelect: false,
-    templateResult: formatItem
-  });*/
-  //sqlQuery("select * from computer;", []).then(res => document.getElementById("res").innerText = JSON.stringify(res));
   let searchEl = document.getElementById("search");
   searchEl.addEventListener("input", function(ev) {
     search(ev.target.value);
@@ -422,5 +361,4 @@ $(document).ready(function() {
     });
 
   });
-  //query("se
 });
