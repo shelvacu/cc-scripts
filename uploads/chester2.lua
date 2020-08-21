@@ -1,18 +1,8 @@
 print("make connection")
 local db = require("db"):default()
 local mp = require("mp")
+local common = require("chestercommon")
 local wired_modem = nil
-local array
-array = function(...)
-  return mp.configWrapper(setmetatable({
-    ...
-  }, {
-    isSequence = true
-  }), {
-    recode = true,
-    convertNull = true
-  })
-end
 print("find wired modem")
 for _, mod in ipairs({
   peripheral.find("modem")
@@ -57,10 +47,10 @@ output_thread = function()
         break
       end
       print("withdrawal rescan")
-      local withdrawals = db:query("select id, item_id, output_chest, slot, count from withdrawal where computer = $1 and not finished", array({
+      local withdrawals = db:query("select id, item_id, output_chest, slot, count from withdrawal where computer = $1 and not finished", {
         ty = "int4",
         val = my_id
-      }))
+      })
       print("found " .. #withdrawals .. " withdrawals")
       for _, row in ipairs(withdrawals) do
         local withdrawal_id = row[1].val
@@ -74,13 +64,13 @@ output_thread = function()
         end
         while remaining > 0 do
           print(remaining .. " remaining")
-          local res = db:query("select chest_name, slot, count from stack where item_id = $1 and chest_computer = $2 and count > 0 order by count asc limit 1", array({
+          local res = db:query("select chest_name, slot, count from stack where item_id = $1 and chest_computer = $2 and count > 0 order by count asc limit 1", {
             ty = "int4",
             val = item_id
           }, {
             ty = "int4",
             val = my_id
-          }))
+          })
           if #res == 0 then
             print("ERR: no items to withdraw for req#" .. withdrawal_id)
             remaining = 0
@@ -109,7 +99,7 @@ output_thread = function()
           else
             new_item_id = item_id
           end
-          db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", array({
+          db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", {
             ty = "int4",
             val = stack_count
           }, {
@@ -124,12 +114,12 @@ output_thread = function()
           }, {
             ty = "int2",
             val = from_slot
-          }))
+          })
         end
-        db:query("update withdrawal set finished = true where id = $1", array({
+        db:query("update withdrawal set finished = true where id = $1", {
           ty = "int4",
           val = withdrawal_id
-        }))
+        })
       end
       _continue_0 = true
     until true
@@ -159,65 +149,14 @@ input_thread = function()
         local items = p.list()
         for from_slot, v in pairs(items) do
           local meta = p.getItemMeta(from_slot)
-          for _, v in ipairs({
-            "effects",
-            "enchantments",
-            "banner",
-            "spawnedEntities",
-            "tanks",
-            "lines"
-          }) do
-            if meta[v] then
-              setmetatable(meta[v], {
-                isSequence = true
-              })
-            end
-          end
           print(meta.name .. " x" .. meta.count .. " " .. from_slot)
-          local res = db:query("insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id", array({
-            ty = "text",
-            val = meta.name
-          }, {
-            ty = "int",
-            val = meta.damage
-          }, {
-            ty = "int",
-            val = meta.maxDamage
-          }, {
-            ty = "text",
-            val = meta.rawName
-          }, {
-            ty = "text",
-            val = (meta.nbtHash or "")
-          }, {
-            ty = "jsonb",
-            val = meta
-          }))
-          local item_id
-          if #res > 0 then
-            item_id = res[1][1].val
-          else
-            res = db:query("select id from item where name = $1 and damage = $2 and nbtHash = $3", array({
-              ty = "text",
-              val = meta.name
-            }, {
-              ty = "int",
-              val = meta.damage
-            }, {
-              ty = "text",
-              val = (meta.nbtHash or "")
-            }))
-            if #res ~= 1 then
-              error("expected 1 result")
-            end
-            item_id = res[1][1].val
-          end
+          local item_id = common.insertOrGetId(db, meta)
           local remaining = meta.count
           while remaining > 0 do
             db:query("start transaction")
             local res
             if remaining < meta.maxCount then
-              res = db:query("select chest_name, slot, count from stack where (item_id = $1 or item_id is null) and count < $2 and chest_computer = $3 order by count desc limit 1;", array({
+              res = db:query("select chest_name, slot, count from stack where (item_id = $1 or item_id is null) and count < $2 and chest_computer = $3 order by count desc limit 1;", {
                 ty = "int4",
                 val = item_id
               }, {
@@ -226,12 +165,12 @@ input_thread = function()
               }, {
                 ty = "int4",
                 val = my_id
-              }))
+              })
             else
-              res = db:query("select chest_name, slot, count from stack where item_id is null and count = 0 and chest_computer = $1 order by count desc limit 1;", array({
+              res = db:query("select chest_name, slot, count from stack where item_id is null and count = 0 and chest_computer = $1 order by count desc limit 1;", {
                 ty = "int4",
                 val = my_id
-              }))
+              })
             end
             if #res == 0 then
               error("no space available!")
@@ -243,7 +182,7 @@ input_thread = function()
             local to_slot = row[2].val
             local count = row[3].val
             local quantity = math.min(remaining, meta.maxCount - count)
-            db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", array({
+            db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", {
               ty = "int4",
               val = count + quantity
             }, {
@@ -258,7 +197,7 @@ input_thread = function()
             }, {
               ty = "int2",
               val = to_slot
-            }))
+            })
             local transferred = p.pushItems(chest_name, from_slot, quantity, to_slot)
             if quantity ~= transferred then
               db:query("rollback")
@@ -279,7 +218,7 @@ end
 local main
 main = function()
   print("about to query")
-  local res = db:query("insert into computer (id, ty, is_golden) values ($1, $2, $3) on conflict (id) do update set ty = $2, is_golden = $3", array({
+  local res = db:query("insert into computer (id, ty, is_golden) values ($1, $2, $3) on conflict (id) do update set ty = $2, is_golden = $3", {
     ty = "int4",
     val = my_id
   }, {
@@ -288,24 +227,24 @@ main = function()
   }, {
     ty = "bool",
     val = golden
-  }))
+  })
   print("res is " .. textutils.serialise(res))
   local connecteds = wired_modem.getNamesRemote()
   for _, name in ipairs(connecteds) do
-    res = db:query("select ty from chest where computer = $1 and name = $2;", array({
+    res = db:query("select ty from chest where computer = $1 and name = $2;", {
       ty = "int4",
       val = my_id
     }, {
       ty = "text",
       val = name
-    }))
+    })
     if #res == 0 then
       print("warn: unrecognized chest " .. name)
     elseif false then
       local size = wired_modem.callRemote(name, "size")
       print("adding " .. name)
       db:query("start transaction")
-      db:query("insert into chest (computer, name, ty, slots) VALUES ($1, $2, $3, $4)", array({
+      db:query("insert into chest (computer, name, ty, slots) VALUES ($1, $2, $3, $4)", {
         ty = "int4",
         val = my_id
       }, {
@@ -317,9 +256,9 @@ main = function()
       }, {
         ty = "int4",
         val = size
-      }))
+      })
       for i = 1, size do
-        db:query("insert into stack (chest_computer, chest_name, slot, count) VALUES ($1, $2, $3, 0)", array({
+        db:query("insert into stack (chest_computer, chest_name, slot, count) VALUES ($1, $2, $3, 0)", {
           ty = "int4",
           val = my_id
         }, {
@@ -328,7 +267,7 @@ main = function()
         }, {
           ty = "int2",
           val = i
-        }))
+        })
       end
       db:query("commit")
     end

@@ -1,16 +1,5 @@
 local db = require("db"):default()
 local mp = require("mp")
-local array
-array = function(...)
-  return mp.configWrapper(setmetatable({
-    ...
-  }, {
-    isSequence = true
-  }), {
-    recode = true,
-    convertNull = true
-  })
-end
 local wired_modem
 print("find wired modem")
 for _, mod in ipairs({
@@ -33,21 +22,21 @@ process = function()
 end
 local main
 main = function()
-  local chests = db:query("select name, ty from chest where computer = $1;", array({
+  local chests = db:query("select name, ty from chest where computer = $1;", {
     ty = "int4",
     val = my_id
-  }))
+  })
   for i, row in ipairs(chests) do
     print("chest " .. i .. " of " .. #chests)
     local name = row[1].val
     local chest_ty = row[2].val
-    local stacks = db:query("select stack.slot, stack.count, item.name, item.damage, item.nbtHash from stack left join item on stack.item_id = item.id where stack.chest_computer = $1 and stack.chest_name = $2", array({
+    local stacks = db:query("select stack.slot, stack.count, item.name, item.damage, item.nbtHash from stack left join item on stack.item_id = item.id where stack.chest_computer = $1 and stack.chest_name = $2", {
       ty = "int4",
       val = my_id
     }, {
       ty = "text",
       val = name
-    }))
+    })
     for _, row in ipairs(stacks) do
       if chest_ty ~= 'storage' then
         print(name .. " is ty " .. chest_ty .. " but has stacks associated!")
@@ -89,7 +78,7 @@ main = function()
       end
       if needsFix and tArgs[1] == "fix" then
         if meta then
-          local res = db:query("insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id", array({
+          local res = db:query("insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id", {
             ty = "text",
             val = meta.name
           }, {
@@ -107,12 +96,12 @@ main = function()
           }, {
             ty = "jsonb",
             val = meta
-          }))
+          })
           local item_id
           if #res > 0 then
             item_id = res[1][1].val
           else
-            res = db:query("select id from item where name = $1 and damage = $2 and nbtHash = $3", array({
+            res = db:query("select id from item where name = $1 and damage = $2 and nbtHash = $3", {
               ty = "text",
               val = meta.name
             }, {
@@ -121,13 +110,13 @@ main = function()
             }, {
               ty = "text",
               val = (meta.nbtHash or "")
-            }))
+            })
             if #res ~= 1 then
               error("expected 1 result")
             end
             item_id = res[1][1].val
           end
-          db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", array({
+          db:query("update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5", {
             ty = "int4",
             val = chestCount
           }, {
@@ -142,9 +131,9 @@ main = function()
           }, {
             ty = "int2",
             val = slot
-          }))
+          })
         else
-          db:query("update stack set count = 0, item_id = NULL where chest_computer = $1 and chest_name = $2 and slot = $3", array({
+          db:query("update stack set count = 0, item_id = NULL where chest_computer = $1 and chest_name = $2 and slot = $3", {
             ty = "int4",
             val = my_id
           }, {
@@ -153,7 +142,7 @@ main = function()
           }, {
             ty = "int2",
             val = slot
-          }))
+          })
         end
       end
     end

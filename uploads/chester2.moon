@@ -2,10 +2,9 @@ export os, turtle, pocket, peripheral, term, multishell
 print "make connection"
 db = require("db")\default!
 mp = require "mp"
+common = require "chestercommon"
 
 wired_modem = nil
-
-array = (...) -> mp.configWrapper(setmetatable({...}, {isSequence: true}), {recode: true, convertNull: true})
 
 print "find wired modem"
 for _,mod in ipairs {peripheral.find "modem"}
@@ -41,9 +40,7 @@ output_thread = ->
     print("withdrawal rescan")
     withdrawals = db\query(
       "select id, item_id, output_chest, slot, count from withdrawal where computer = $1 and not finished",
-      array(
-        {ty: "int4", val: my_id}
-      )
+      {ty: "int4", val: my_id}
     )
     print("found "..#withdrawals.." withdrawals")
     for _, row in ipairs(withdrawals)
@@ -60,10 +57,8 @@ output_thread = ->
         --find a suitable slot to withdraw from
         res = db\query(
           "select chest_name, slot, count from stack where item_id = $1 and chest_computer = $2 and count > 0 order by count asc limit 1",
-          array(
-            {ty: "int4", val: item_id},
-            {ty: "int4", val: my_id}
-          )
+          {ty: "int4", val: item_id},
+          {ty: "int4", val: my_id}
         )
         if #res == 0
           print("ERR: no items to withdraw for req#"..withdrawal_id)
@@ -87,19 +82,15 @@ output_thread = ->
           new_item_id = item_id
         db\query(
           "update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5",
-          array(
-            {ty: "int4", val: stack_count},
-            {ty: "int4", val: new_item_id},
-            {ty: "int4", val: my_id},
-            {ty: "text", val: chest_name},
-            {ty: "int2", val: from_slot}
-          )
+          {ty: "int4", val: stack_count},
+          {ty: "int4", val: new_item_id},
+          {ty: "int4", val: my_id},
+          {ty: "text", val: chest_name},
+          {ty: "int2", val: from_slot}
         )
       db\query(
         "update withdrawal set finished = true where id = $1",
-        array(
-          {ty: "int4", val: withdrawal_id}
-        )
+        {ty: "int4", val: withdrawal_id}
       )
 
 
@@ -116,46 +107,8 @@ input_thread = ->
       items = p.list() --does *not* return a sequence
       for from_slot,v in pairs(items)
         meta = p.getItemMeta(from_slot)
-        -- still not good, doesn't handle nested data
-        for _,v in ipairs{"effects","enchantments","banner","spawnedEntities","tanks","lines"}
-          if meta[v]
-            setmetatable(meta[v],{isSequence: true})
-
-        -- if meta.enchantments
-        --   setmetatable(meta.enchantments,{isSequence: true})
-          -- print textutils.serialise meta.enchantments
-          -- print #meta.enchantments
-          -- for _,_ in ipairs(meta.enchantments)
-          --   print "iter"
-        --print(textutils.serialise(meta))
         print(meta.name .. " x" .. meta.count .. " " .. from_slot)
-        res = db\query(
-          "insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id",
-          array(
-            {ty: "text", val: meta.name},
-            {ty: "int" , val: meta.damage},
-            {ty: "int" , val: meta.maxDamage},
-            {ty: "text", val: meta.rawName},
-            {ty: "text", val: (meta.nbtHash or "")},
-            {ty: "jsonb", val: meta}
-          )
-        )
-        --print textutils.serialise(res)
-        local item_id
-        if #res > 0
-          item_id = res[1][1].val
-        else
-          res = db\query(
-            "select id from item where name = $1 and damage = $2 and nbtHash = $3",
-            array(
-              {ty: "text", val: meta.name},
-              {ty: "int" , val: meta.damage},
-              {ty: "text", val: (meta.nbtHash or "")}
-            )
-          )
-          if #res ~= 1
-            error"expected 1 result"
-          item_id = res[1][1].val
+        item_id = common.insertOrGetId(db, meta)
         remaining = meta.count
         while remaining > 0
           db\query("start transaction")
@@ -163,18 +116,14 @@ input_thread = ->
           if remaining < meta.maxCount
             res = db\query(
               "select chest_name, slot, count from stack where (item_id = $1 or item_id is null) and count < $2 and chest_computer = $3 order by count desc limit 1;"
-              array(
-                {ty: "int4", val: item_id},
-                {ty: "int4", val: meta.maxCount},
-                {ty: "int4", val: my_id}
-              )
+              {ty: "int4", val: item_id},
+              {ty: "int4", val: meta.maxCount},
+              {ty: "int4", val: my_id}
             )
           else --full stack, move it all at once
             res = db\query(
               "select chest_name, slot, count from stack where item_id is null and count = 0 and chest_computer = $1 order by count desc limit 1;"
-              array(
-                {ty: "int4", val: my_id}
-              )
+              {ty: "int4", val: my_id}
             )
 
           if #res == 0
@@ -188,13 +137,11 @@ input_thread = ->
           quantity = math.min(remaining, meta.maxCount - count)
           db\query(
             "update stack set count = $1, item_id = $2 where chest_computer = $3 and chest_name = $4 and slot = $5",
-            array(
-              {ty: "int4", val: count + quantity},
-              {ty: "int4", val: item_id},
-              {ty: "int4", val: my_id},
-              {ty: "text", val: chest_name},
-              {ty: "int2", val: to_slot}
-            )
+            {ty: "int4", val: count + quantity},
+            {ty: "int4", val: item_id},
+            {ty: "int4", val: my_id},
+            {ty: "text", val: chest_name},
+            {ty: "int2", val: to_slot}
           )
           transferred = p.pushItems(chest_name, from_slot, quantity, to_slot)
           if quantity ~= transferred
@@ -207,11 +154,9 @@ main = ->
   print "about to query"
   res = db\query(
     "insert into computer (id, ty, is_golden) values ($1, $2, $3) on conflict (id) do update set ty = $2, is_golden = $3",
-    array(
-      {ty: "int4", val: my_id},
-      {ty: "text", val: ty},
-      {ty: "bool", val: golden}
-    )
+    {ty: "int4", val: my_id},
+    {ty: "text", val: ty},
+    {ty: "bool", val: golden}
   )
   print "res is "..textutils.serialise(res)
   connecteds = wired_modem.getNamesRemote()
@@ -220,10 +165,8 @@ main = ->
   for _,name in ipairs(connecteds)
     res = db\query(
       "select ty from chest where computer = $1 and name = $2;",
-      array(
-        {ty: "int4", val: my_id},
-        {ty: "text", val: name}
-      )
+      {ty: "int4", val: my_id},
+      {ty: "text", val: name}
     )
     if #res == 0
       print("warn: unrecognized chest "..name)
@@ -233,25 +176,20 @@ main = ->
       db\query("start transaction")
       db\query(
         "insert into chest (computer, name, ty, slots) VALUES ($1, $2, $3, $4)",
-        array(
-          {ty: "int4", val: my_id},
-          {ty: "text", val: name},
-          {ty: "text", val: "unknown"},
-          {ty: "int4", val: size}
-        )
+        {ty: "int4", val: my_id},
+        {ty: "text", val: name},
+        {ty: "text", val: "unknown"},
+        {ty: "int4", val: size}
       )
       for i=1,size
         db\query(
           "insert into stack (chest_computer, chest_name, slot, count) VALUES ($1, $2, $3, 0)",
-          array(
-            {ty: "int4", val: my_id},
-            {ty: "text", val: name},
-            {ty: "int2", val: i}
-          )
+          {ty: "int4", val: my_id},
+          {ty: "text", val: name},
+          {ty: "int2", val: i}
         )
       db\query("commit")
   print("all chests added")
   parallel.waitForAll input_thread, output_thread
-  
 
 parallel.waitForAll process, main

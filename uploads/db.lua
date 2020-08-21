@@ -4,7 +4,12 @@ local Connection = {msgid_inc = 1}
 
 local conn_id = 1
 
+local doDebug = settings.get("db.debug", false)
+
 function Connection:new(url)
+  if doDebug then
+    print("Connecting to "..url)
+  end
   local conn = setmetatable({}, {__index = self})
   local res = {http.websocket(url)}
   if not res[1] then
@@ -29,7 +34,9 @@ function Connection:process()
       local parsed = mp.unpack(data)
       local message_name
       --print(#data)
-      --print(textutils.serialise(parsed))
+      if doDebug then
+        print(textutils.serialise(parsed))
+      end
       if parsed.ty == "error" and parsed.id == nil then
         error("Error from server: " .. parsed.msg)
       end
@@ -59,13 +66,15 @@ function Connection:process()
   -- end
 end
 
-function Connection:query(q, params)
-  if params == nil then params = {} end
+function Connection:query(q, ...)
+  --if params == nil then params = {} end
+  params = mp.configWrapper(setmetatable({...}, {isSequence = true}), {recode = true, convertNull = true})
   local msgid = self.msgid_inc
-  self.msgid_inc = msgid + 1
-  if getmetatable(params) == nil then
-    setmetatable(params, {isSequence = true})
+  if doDebug then
+    print("Sending query "..msgid.." with "..(#params.val).." params")
+    print("  Query: "..q);
   end
+  self.msgid_inc = msgid + 1
   --print"sending"
   self.internal.send(mp.pack{ty = "query", statement = q, params = params, msgid = msgid}, true)
   --print"sent; waiting"

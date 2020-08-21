@@ -151,7 +151,7 @@ local function makeInventoryNotFull()
       first = false
     end
   end
-  while turtle.getFuelLevel() < turtle.getFuelLimit() - 1000 do
+  while turtle.getFuelLevel() < turtle.getFuelLimit() - 10000 do
     moveToY(chestPos.y + 1)
     turtle.select(2)
     turtle.suck()
