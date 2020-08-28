@@ -68,3 +68,13 @@ create unique index on crafting_recipe(
 );
 
 create index on crafting_recipe(result);
+
+create table emily_job (
+  id serial primary key,
+  recipe int not null references crafting_recipe(id),
+  count int not null, --how many *times* to craft, not count of output
+  count_finished int not null,
+  prev int references emily_job(id)
+);
+
+create unique index on emily_job(parent);
