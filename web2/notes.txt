@@ -1,0 +1,18 @@
+type Order
+
+type Recipe = {
+  id: number,
+  parts: {qty: number, item: Item}[]
+}
+
+type Item
+
+type Order = {
+  item: Item
+  qty: number
+  qty_inv: number
+  have: number
+  //qty_craft implied
+  recipes: null|Recipe[],
+  children: Order[]
+}

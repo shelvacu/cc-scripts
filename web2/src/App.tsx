@@ -12,9 +12,9 @@ function preloadItemsCache(ids: number[]):Promise<void> {
   return db.sqlQuery("select fullMeta, damage, id from item where id in (" + ids.join(",") + ");").then((rows) => {
     for(let row of rows) {
       let item = {
-        fullMeta: row[0].val as ItemMeta,
         damage: row[1].val as number,
-        id: row[2].val as number
+        id: row[2].val as number,
+        ...(row[0].val as ItemMeta)
       };
       ItemsCache.set(item.id, item);
     }
@@ -84,15 +84,7 @@ class ScrollableNumberInput extends React.Component<{value: number, onChange: (n
     this.props.onChange( val === "" ? 0 : parseInt(val) );
   }
   render() {
-    let innerProps = {
-      type: "number",
-      value: this.props.value,
-      onScroll: this.scroll,
-      onChange: this.onChange,
-      ...(this.props.passThru || {})
-    };
-    // return React.createElement("input", innerProps);
-    return <input {...innerProps} />
+    return <input type="number" value={this.props.value} onScroll={this.scroll} onChange={this.onChange} {...(this.props.passThru || {})} />
   }
 }
 
@@ -119,32 +111,39 @@ type ItemMeta = {
 };
 
 type Item = {
-  fullMeta: ItemMeta,
   damage: number,
   id: number
+} & ItemMeta;
+
+// type ItemWithCount = Item & {count: number};
+
+// type EditableSelectableItemProps = {
+//   editMode: true,
+//   item: ItemWithCount,
+//   quantity: number,
+//   onRemove: (item: ItemWithCount) => void,
+//   onQtyChange: (item: ItemWithCount, qty: number) => void
+// };
+// 
+// type SelectableItemProps = 
+//   {
+//     editMode?: false,
+//     item: Item,
+//     count: number,
+//     onAdd: (item: [Item, number]) => void
+//   }|EditableSelectableItemProps;
+
+type ItemComponentProps = {
+  item: Item,
+  have: number,
+  children: React.Component[],
+  buttonIsAdd: boolean,
+  onClick: (me: ItemComponentProps) => void
 };
 
-type ItemWithCount = Item & {count: number};
-
-type EditableSelectableItemProps = {
-  editMode: true,
-  item: ItemWithCount,
-  quantity: number,
-  onRemove: (item: ItemWithCount) => void,
-  onQtyChange: (item: ItemWithCount, qty: number) => void
-};
-
-type SelectableItemProps = 
-  {
-    editMode?: false,
-    item: ItemWithCount,
-    onAdd: (item: ItemWithCount) => void
-  }|EditableSelectableItemProps;
-
-class SelectableItem extends React.Component<SelectableItemProps, {}> {
+class ItemComponent extends React.Component<ItemComponentProps, {}> {
   onAddRemove() {
-    let func = this.props.editMode ? this.props.onRemove : this.props.onAdd;
-    func(this.props.item);
+    this.props.onClick(this.props);
   }
   onClick = (ev:any) => {
     this.onAddRemove();
@@ -163,12 +162,12 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
 
   render() {
     let info = [];
-    info.push(<span key="idname">{this.props.item.fullMeta.name}</span>);
-    if (this.props.item.fullMeta.maxDamage > 0) {
+    info.push(<span key="idname">{this.props.item.name}</span>);
+    if (this.props.item.maxDamage > 0) {
       info.push(<span key="damage"> — D{this.props.item.damage}</span>);
     }
     let enchs;
-    if ((enchs = this.props.item.fullMeta.enchantments)) {
+    if ((enchs = this.props.item.enchantments)) {
       //let enchProps:(({full: string,shrt:string})[]) = [];
       let enchProps = [];
       for (let ench of enchs) {
@@ -188,7 +187,7 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
     }
 
     let qtyButtons = null;
-    if (this.props.editMode) {
+    /* if (this.props.editMode) {
       qtyButtons = <div style={{display: "inline-block"}}>
         <ScrollableNumberInput value={this.props.quantity} onChange={()=>1} passThru={{style: {width:"5em"}}} />
 
@@ -196,13 +195,13 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
         <button type="button">+S</button>
         <button type="button">-S</button>
       </div>;
-    }
+    } */
     return (
       <div className="iteminfo" style={{display: "flex", padding: "5px"}} id={`item-${this.props.item.id}`}>
         <div style={{display: "flex", flexDirection: "column"}}>
           <img 
             className="item-img"
-            alt={this.props.item.fullMeta.displayName}
+            alt=""
             style={{
               alignSelf: "start",
               width: "32px",
@@ -210,17 +209,18 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
               imageRendering: "crisp-edges"
             }}
             src={itemImg(this.props.item.fullMeta.name, this.props.item.damage)} />
-          <button type="button" onClick={this.onClick} style={{border:"1px solid black", marginTop:"5px"}}>{this.props.editMode ? "-" : "+"}</button>
+          <button type="button" onClick={this.onClick} style={{border:"1px solid black", marginTop:"5px"}}>{this.props.buttonIsAdd ? "-" : "+"}</button>
         </div>
         <div style={{display: "flex", flexDirection: "column", flexGrow: 1, marginLeft:"5px"}}>
           <span>
-            <b>{this.props.item.fullMeta.displayName}</b>
-            {qtyButtons}
+            <b>{this.props.item.displayName}</b>
+            /*{qtyButtons}*/
           </span>
           <div>Have: <StackCount hideCount={false} count={this.props.item.count} stackSize={this.props.item.fullMeta.maxCount} /></div>
           <div>
             {info}
           </div>
+          {this.props.children}
         </div>
       </div>
     );
