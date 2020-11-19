@@ -11,3 +11,20 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+.tiny-item {
+  height: 2em;
+}
+
+.job-recipe-select {
+  display: flex;
+  flex-direction: column;
+}
+
+.job-indent {
+  margin-left: 42px;
+}
+
+.from-inv-input {
+  width: 7em;
+}

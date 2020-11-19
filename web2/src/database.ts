@@ -1,4 +1,5 @@
 import * as MessagePack from "@msgpack/msgpack";
+import { setConstantValue } from "typescript";
 export type SqlValue =
   {ty: "bool", val: boolean}|
   {ty: "char"|"int"|"smallint"|"tinyint"|"oid"|"bigint"|"real"|"double"|"int4", val: number}|
@@ -41,7 +42,11 @@ socket.onmessage = function(msgEv) {
     let parsed = MessagePack.decode(data) as any as Pg2WsMessage;
     if (parsed.ty === "results") {
       let msgCallbacks;
-      (msgCallbacks = msgs.get(parsed.msgid)) && msgCallbacks[0](parsed.rows);
+      if((msgCallbacks = msgs.get(parsed.msgid))){
+        let cb = msgCallbacks[0];
+        let rows = (parsed.rows.map((row) => row.map((sval) => sval.ty == "null" ? {ty: "null", val: null} as SqlValue : sval)));
+        cb(rows);
+      }
       msgs.delete(parsed.msgid)
     } else if (parsed.ty === "prepared") {
       let msgCallbacks
