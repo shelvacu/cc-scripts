@@ -1,6 +1,7 @@
 export os, turtle, pocket, peripheral, term, multishell
 print "make connection"
-db = require("db")\default!
+dblib = require("db")
+db = dblib\default!
 mp = require "mp"
 common = require "chestercommon"
 
@@ -28,9 +29,128 @@ elseif select(2, term.getSize()) == 13 and golden
 else
   ty = "computer"
 
-process = -> db\process!
+with_db = (func) ->
+  db = dblib\default!
+  return (-> db\process!),(-> func!)
 
-output_thread = ->
+attach = (func, ..args) -> -> func(..args)
+
+process = db -> db\process!
+
+clamp = (num, low, high) ->
+  math.min(math.max(num, low), high)
+
+job_dep_finish_thread = db ->
+  sleeptime = 0
+  while true
+    res = db\query(
+      "update job_dep_graph j set children_finished=true from lateral (
+        select n.id from job_dep_graph n left join job_dep_graph c on c.parent = n.id where n.children_finished = false and coalesce( bool_and(c.finished), true )
+      ) q where j.id = q.id"
+    )
+    count1 = res[1][1].val
+    res = db\query(
+      "update job_dep_graph j set finished=true from lateral (
+        select n.id from job_dep_graph n left join job c on c.parent = n.id where n.finished = false and n.children_finished = true and coalesce( bool_and(c.finished), true )
+      ) q where j.id = q.id"
+    )
+    count2 = res[1][1].val
+    count = count1+count2
+    if count == 0
+      sleeptime = clamp(sleeptime*2, 0.1, 6)
+      sleep(sleeptime)
+
+job_output_thread = db ->
+  sleeptime = 0
+  while true
+    db\query("start transaction")
+    res = db\query(
+      "select j.chest_computer, j.chest_name, j.quantity, j.item_id, j.id, j.parent from job j, job_dep_graph jdg where j.parent = jdg.id and jdg.finished = false and jdg.children_finished = true and j.finished = false and j.chest_computer is not null limit 1 for no key update skip locked"
+    )
+    if #res == 0
+      db\query("commit")
+      sleeptime = clamp(sleeptime*2, 0.1, 6)
+      sleep(sleeptime)
+      continue
+    row = res[1]
+    out_chest_computer = row[1]
+    out_chest_name = row[2]
+    quantity = row[3]
+    item_id = row[4]
+    job_id = row[5]
+    job_parent_id = row[6]
+
+    res = db\query(
+      "select chest_computer, chest_name, slot, count from stack where item_id = $1 and count >= $2 limit 1 for no key update skip locked",
+      {ty: "int4", val: item_id},
+      {ty: "int4", val: quantity}
+    )
+    if #res == 0
+      --do it again, but this time don't SKIP LOCKED and dont be picky about count
+      res = db\query(
+        "select chest_computer, chest_name, slot, count from stack where item_id = $1 order by count desc limit 1 for no key update",
+        {ty: "int4", val: item_id}
+      )
+    if #res == 0
+      --can't complete this job
+      db\query("rollback")
+      print("no items avail for job "..job_id)
+      sleep 1
+      continue
+    row = res[1]
+    stack_chest_computer = row[1]
+    stack_chest_name = row[2]
+    stack_slot = row[3]
+    stack_count = row[4]
+
+    source_chest = peripheral.wrap(stack_chest_name)
+    transferred = source_chest.pushItems(out_chest_name, stack_slot, quantity)
+
+    if transferred == 0 and quantity != 0
+      db\query("commit")
+      sleep 2
+      continue
+
+    new_stack_count = stack_count - transferred
+    if new_stack_count == 0
+      db\query(
+        "update stack set item_id = NULL, count = 0 where chest_computer = $1 and chest_name = $2 and slot = $3",
+        {ty: "int4", val: stack_chest_computer},
+        {ty: "text", val: stack_chest_name},
+        {ty: "int4", val: stack_slot}
+      )
+    else
+      db\query(
+        "update stack set count = $4 where chest_computer = $1 and chest_name = $2 and slot = $3",
+        {ty: "int4", val: stack_chest_computer},
+        {ty: "text", val: stack_chest_name},
+        {ty: "int4", val: stack_slot},
+        {ty: "int4", val: new_stack_count}
+      )
+    if transferred == quantity
+      --ezpz! just mark the job finished and be on our way
+      db\query(
+        "update job set finished = true where id = $1",
+        {ty: "int4", val: job_id}
+      )
+    else
+      --ughggggggggg
+      db\query(
+        "update job set finished = true, quantity = $1 where id = $2",
+        {ty: "int4", transferred},
+        {ty: "int4", job_id}
+      )
+      db\query(
+        "insert into job (parent, chest_computer, chest_name, item_id, quantity, finished) VALUES ($1, $2, $3, $4, $5, false)",
+        {ty: "int4", val: job_parent_id},
+        {ty: "int4", val: chest_computer},
+        {ty: "text", val: chest_name},
+        {ty: "int4", val: item_id},
+        {ty: "int4", val: quantity - transferred}
+      )
+    db\query("commit")
+
+legacy_output_thread = db ->
   db\query("listen withdrawal_rescan")
   print("listening for withdrawal_rescan")
   while true
@@ -38,8 +158,9 @@ output_thread = ->
     continue if id ~= db.id
     continue if parsed.channel ~= "withdrawal_rescan"
     print("withdrawal rescan")
+    db\query("start transaction")
     withdrawals = db\query(
-      "select id, item_id, output_chest, slot, count from withdrawal where computer = $1 and not finished",
+      "select id, item_id, output_chest, slot, count from withdrawal where computer = $1 and not finished for no key update",
       {ty: "int4", val: my_id}
     )
     print("found "..#withdrawals.." withdrawals")
@@ -56,7 +177,7 @@ output_thread = ->
         print(remaining .. " remaining")
         --find a suitable slot to withdraw from
         res = db\query(
-          "select chest_name, slot, count from stack where item_id = $1 and chest_computer = $2 and count > 0 order by count asc limit 1",
+          "select chest_name, slot, count from stack where item_id = $1 and chest_computer = $2 and count > 0 order by count asc limit 1 for no key update skip locked",
           {ty: "int4", val: item_id},
           {ty: "int4", val: my_id}
         )
@@ -92,9 +213,9 @@ output_thread = ->
         "update withdrawal set finished = true where id = $1",
         {ty: "int4", val: withdrawal_id}
       )
+    db\query("commit")
 
-
-input_thread = ->
+input_thread = db ->
   while true
     os.sleep(5)
     names = db\query("select name from chest where computer = $1 and ty = 'input';", array({ty: "int4", val: my_id}))
@@ -115,14 +236,14 @@ input_thread = ->
           local res
           if remaining < meta.maxCount
             res = db\query(
-              "select chest_name, slot, count from stack where (item_id = $1 or item_id is null) and count < $2 and chest_computer = $3 order by count desc limit 1;"
+              "select chest_name, slot, count from stack where (item_id = $1 or item_id is null) and count < $2 and chest_computer = $3 order by count desc limit 1 for no key update ;"
               {ty: "int4", val: item_id},
               {ty: "int4", val: meta.maxCount},
               {ty: "int4", val: my_id}
             )
           else --full stack, move it all at once
             res = db\query(
-              "select chest_name, slot, count from stack where item_id is null and count = 0 and chest_computer = $1 order by count desc limit 1;"
+              "select chest_name, slot, count from stack where item_id is null and count = 0 and chest_computer = $1 order by count desc limit 1 for no key update"
               {ty: "int4", val: my_id}
             )
 
@@ -163,6 +284,7 @@ main = ->
   --chest_map = {} --maps name to ty
   --chest_ty_map = {input: {}, output: {}, storage: {}, unknown: {}}
   for _,name in ipairs(connecteds)
+    continue if common.starts_with(name, "turtle_")
     res = db\query(
       "select ty from chest where computer = $1 and name = $2;",
       {ty: "int4", val: my_id},
@@ -190,6 +312,19 @@ main = ->
         )
       db\query("commit")
   print("all chests added")
-  parallel.waitForAll input_thread, output_thread
+  db\close!
+  parallel.waitForAll(
+    with_db(input_thread),
+    with_db(legacy_output_thread),
+    with_db(job_dep_finish_thread)
+  )
+  -- local input_db = dblib\default!
+  -- local legacy_output_db = dblib\default!
+  -- parallel.waitForAll(
+  --   attach(input_thread, input_db),
+  --   attach(legacy_output_thread, legacy_output_db),
+  --   attach(process, input_db),
+  --   attach(process, output_db)
+  -- )
 
-parallel.waitForAll process, main
+parallel.waitForAll attach(process,db), main

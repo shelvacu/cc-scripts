@@ -1,6 +1,10 @@
 mp = require "mp"
 
 return {
+  starts_with: (str, start) ->
+    str\sub(1, #start) == start
+  ends_with: (str, ending) ->
+    ending == "" or str\sub(-#ending) == ending
   insertOrGetId: (db, meta) ->
     if meta == nil
       return nil

@@ -6,7 +6,7 @@ local conn_id = 1
 
 local doDebug = settings.get("db.debug", false)
 
-function Connection:new(url)
+function Connection:new(url, use_id)
   if doDebug then
     print("Connecting to "..url)
   end
@@ -17,13 +17,19 @@ function Connection:new(url)
   end
   conn.address = url
   conn.internal = res[1]
-  conn.id = conn_id
-  conn_id = conn_id + 1
+  if use_id == nil then
+    conn.id = conn_id
+    conn_id = conn_id + 1
+  else
+    conn.id = use_id
+  end
   return conn
 end
 
 function Connection:default()
-  return self:new("ws://10.244.65.57:7648/")
+  local this_id = conn_id
+  conn_id = conn_id + 1
+  return self:new("ws://10.244.65.57:7648/?"+this_id, this_id)
 end
 
 function Connection:process()

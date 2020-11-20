@@ -38,6 +38,7 @@ create table job_dep_graph (
   id serial not null primary key,
   parent int references job_dep_graph(id),
   finished boolean not null default false,
+  children_finished boolean not null default false,
   item_id int references item(id), --not a structural requirement; used for display in UI
   quantity int, --also doesn't need to be correct
   name text --for display
@@ -50,9 +51,14 @@ create table job (
   id serial not null primary key,
   parent int references job_dep_graph(id),
   crafting_recipe_id int references crafting_recipe(id),
+  chest_computer int,
+  chest_name text,
   item_id int references item(id),
   quantity int not null,
-  finished boolean not null default false
+  finished boolean not null default false,
+  FOREIGN KEY (chest_computer, chest_name) references chest(computer, name),
+  CHECK((chest_computer IS NULL) = (chest_name IS NULL)),
+  CHECK(((chest_name IS NOT NULL)::int + (crafting_recipe_id IS NOT NULL)::int) = 1)
 );
 
 create unique index on crafting_recipe(
@@ -78,3 +84,7 @@ create table emily_job (
 );
 
 create unique index on emily_job(parent);
+
+create index on job(parent, finished);
+
+create index on job_dep_graph(parent, children_finished, finished);
