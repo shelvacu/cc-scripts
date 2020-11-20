@@ -1,20 +1,22 @@
-import React from 'react';
-import { OrderedMap } from 'immutable';
-//import logo from './logo.svg';
-//import './App.css';
+import React, { isValidElement } from 'react';
+import { OrderedMap, List } from 'immutable';
 import * as blockdata from './blockdata';
 import enchantmentData from './enchantmentData';
 import * as db from './database';
+import cloneDeep from 'lodash/cloneDeep';
 
-const ItemsCache = new Map<number,Item>();
+type HasInvQty = {invQty: number};
+
+const ItemsCache = new Map<number,Item&HasInvQty>();
 
 function preloadItemsCache(ids: number[]):Promise<void> {
   console.log(ids);
-  return db.sqlQuery("select fullMeta, damage, id from item where id in (" + ids.join(",") + ");",[]).then((rows) => {
+  return db.sqlQuery("select i.fullMeta, i.damage, i.id, c.count from item i, lateral (select sum(count) as count from stack where item_id = i.id) c where i.id in (" + ids.join(",") + ");",[]).then((rows) => {
     for(let row of rows) {
       let item = {
         damage: row[1].val as number,
         id: row[2].val as number,
+        invQty: row[3].val as number,
         ...(row[0].val as ItemMeta)
       };
       ItemsCache.set(item.id, item);
@@ -23,7 +25,7 @@ function preloadItemsCache(ids: number[]):Promise<void> {
   });
 }
 
-function getItem(id:number):Promise<Item> {
+function getItem(id:number):Promise<Item&HasInvQty> {
   return new Promise(function(suc, fail) {
     if (ItemsCache.has(id)) {
       let res = ItemsCache.get(id);
@@ -100,16 +102,6 @@ class ScrollableNumberInput extends React.Component<{value: number, onChange: (n
   }
 }
 
-// class ScrollableTestWrapper extends React.Component<{}, {value: number|null}> {
-//   state = {value: 0};
-// 
-//   onChange = (value: number|null) => this.setState({value});
-//   
-//   render() {
-//     return <ScrollableNumberInput value={this.state.value} onChange={this.onChange} />
-//   }
-// }
-
 type ItemMeta = {
   name: string,
   maxCount: number,
@@ -129,155 +121,125 @@ type Item = {
 
 type ItemWithCount = {count: number} & Item;
 
-// type ItemWithCount = Item & {count: number};
-
-// type EditableSelectableItemProps = {
-//   editMode: true,
-//   item: ItemWithCount,
-//   quantity: number,
-//   onRemove: (item: ItemWithCount) => void,
-//   onQtyChange: (item: ItemWithCount, qty: number) => void
-// };
-// 
-// type SelectableItemProps = 
-//   {
-//     editMode?: false,
-//     item: Item,
-//     count: number,
-//     onAdd: (item: [Item, number]) => void
-//   }|EditableSelectableItemProps;
-
-// type ItemComponentProps = {
-//   item: ItemWithCount,
-//   have: number,
-//   children: React.Component[],
-//   buttonIsAdd: boolean,
-//   onClick: (me: ItemComponentProps) => void
-// };
-
-// class ItemComponent extends React.Component<ItemComponentProps, {}> {
-//   onAddRemove() {
-//     this.props.onClick(this.props);
-//   }
-//   onClick = (ev:any) => {
-//     this.onAddRemove();
-//   }
-
-//   onKey = (ev:{key: string}) => {
-//     //console.log(ev.key);
-//     switch (ev.key) {
-//       case "Enter":
-//       case "Space": {
-//         this.onAddRemove();
-//         break;
-//       }
-//     }
-//   }
-
-//   render() {
-//     let info = [];
-//     info.push(<span key="idname">{this.props.item.name}</span>);
-//     if (this.props.item.maxDamage > 0) {
-//       info.push(<span key="damage"> — D{this.props.item.damage}</span>);
-//     }
-//     let enchs;
-//     if ((enchs = this.props.item.enchantments)) {
-//       //let enchProps:(({full: string,shrt:string})[]) = [];
-//       let enchProps = [];
-//       for (let ench of enchs) {
-//         let enchData = enchantmentData.find(data => data[1] === ench.name);
-//         let shortcode;
-//         if (!enchData) {
-//           console.log(ench);
-//           shortcode = "??";
-//         } else {
-//           shortcode = enchData[0];
-//         }
-//         enchProps.push({full: ench.fullName, shrt: shortcode+ench.level});
-//       }
-//       enchProps.sort((a,b) => a.shrt < b.shrt ? -1 : a.shrt > b.shrt ? 1 : 0);
-//       let enchEls = enchProps.map(({full, shrt}) => <React.Fragment key={shrt}><abbr title={full}>{shrt}</abbr> </React.Fragment>);
-//       info.push(<span key="enchantments"> — {enchEls}</span>);
-//     }
-
-//     let qtyButtons = null;
-//     /* if (this.props.editMode) {
-//       qtyButtons = <div style={{display: "inline-block"}}>
-//         <ScrollableNumberInput value={this.props.quantity} onChange={()=>1} passThru={{style: {width:"5em"}}} />
-
-//         <button type="button">xS</button>
-//         <button type="button">+S</button>
-//         <button type="button">-S</button>
-//       </div>;
-//     } */
-//     return (
-//       <div className="iteminfo" style={{display: "flex", padding: "5px"}} id={`item-${this.props.item.id}`}>
-//         <div style={{display: "flex", flexDirection: "column"}}>
-//           <img 
-//             className="item-img"
-//             alt=""
-//             style={{
-//               alignSelf: "start",
-//               width: "32px",
-//               height: "32px",
-//               imageRendering: "crisp-edges"
-//             }}
-//             src={itemImg(this.props.item.name, this.props.item.damage)} />
-//           <button type="button" onClick={this.onClick} style={{border:"1px solid black", marginTop:"5px"}}>{this.props.buttonIsAdd ? "-" : "+"}</button>
-//         </div>
-//         <div style={{display: "flex", flexDirection: "column", flexGrow: 1, marginLeft:"5px"}}>
-//           <span>
-//             <b>{this.props.item.displayName}</b>
-//             /*{qtyButtons}*/
-//           </span>
-//           <div>Have: <StackCount hideCount={false} count={this.props.item.count} stackSize={this.props.item.maxCount} /></div>
-//           <div>
-//             {info}
-//           </div>
-//           {this.props.children}
-//         </div>
-//       </div>
-//     );
-//   }
-// }
-
 type RecipeProps = {
   ty: "crafting",
-  children: {qty: number, job: JobNodeProps}[],
+  children: {qty: number, job: JobNodeProps&{topLevel: false}}[],
   key: number,
   result_count: number
 };
 
-type JobNodeProps =
-  {itemProps: ItemWithCount, topLevel: boolean} & ({
+type JobPath = List<number|[number, number]>;
+
+type JobNodeFuncsLoaded = (
+  {
     loading: false,
-    invQty: number, //the number of items to pull from inventory, rather than crafting them.
+    onSelectedRecipeChange: (path: JobPath, newRecipe: number|null) => any,
+    onFromInvQtyChange: (path: JobPath, newQty: number) => any
+  }&(
+    {topLevel: false}|{
+      topLevel: true,
+      onRemove: (path: JobPath) => any,
+      onQtyChange: (path: JobPath, newQty: number) => any
+    }
+  )
+);
+
+type JobNodeFuncs =
+  {
+    onSelectedRecipeChange?: (path: JobPath, newRecipe: number|null) => any,
+    onFromInvQtyChange?: (path: JobPath, newQty: number) => any,
+    onRemove?: (path: JobPath) => any,
+    onQtyChange?: (path: JobPath, newQty: number) => any
+  }&(
+  {loading: true}|{loading: "deferred"}|JobNodeFuncsLoaded);
+
+type JobNodeProps =
+  {itemProps: ItemWithCount&HasInvQty, errors:string[]} & (
+    {topLevel: boolean}
+  ) & ({
+    loading: false,
+    fromInvQty: number, //the number of items to pull from inventory, rather than crafting them.
     recipes: RecipeProps[],
     selectedRecipe: number|null
     //children: [number, JobNodeProps][]
   }|{loading: true}|{loading: "deferred"});
 
-class JobNode extends React.Component<JobNodeProps,{}> {
+class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{}> {
+  handleOptionChange = (changeEvent:{target: {value: string}}) => {
+    let textVal = changeEvent.target.value;
+    let val:number|null;
+    if(textVal === "none"){
+      val = null;
+    }else{
+      val = parseInt(textVal);
+    }
+    let p = this.props;
+    if(p.loading === false){
+      let p2:JobNodeFuncsLoaded = p;
+      p2.onSelectedRecipeChange(this.props.path, val);
+    }else{
+      throw "bad"
+    }
+  }
+  handleQtyChange = (_:any, newQty:number) => {
+    if(this.props.topLevel && !this.props.loading){
+      this.props.onQtyChange(this.props.path, newQty)
+    }else{
+      throw "bad"
+    }
+  }
+  handleRemove = () => {
+    if(this.props.topLevel && !this.props.loading){
+      this.props.onRemove(this.props.path)
+    }else{
+      throw "bad"
+    }
+  }
+  handleFromInvQtyChange = (newQty:number) => {
+    if(!this.props.loading){
+      this.props.onFromInvQtyChange(this.props.path, newQty);
+    }else{
+      throw "bad"
+    }
+  }
   render() {
     let craftInfo = <>Loading...</>;
     if(!this.props.loading){
+      let props:JobNodeFuncsLoaded = {...this.props};
       let jobNodeChildren = <></>;
       if(this.props.selectedRecipe != null) {
+        let selRec = this.props.selectedRecipe;
         jobNodeChildren = <>
-          {this.props.recipes[this.props.selectedRecipe].children.map((child) => <div style={{display: "flex"}}>
+          {this.props.recipes[selRec].children.map((child, idx) => <div style={{display: "flex"}} key={idx}>
             <div className="job-qty"><b>{child.qty}x</b></div>
-            <JobNode {...child.job} />
+            <JobNode
+              {...child.job}
+              path={this.props.path.push([selRec, idx])}
+              onSelectedRecipeChange={props.onSelectedRecipeChange}
+              onFromInvQtyChange={props.onFromInvQtyChange} />
           </div>)}
         </>;
       }
       let recipeSelect = <>No recipes available</>;
       if(this.props.recipes.length > 0){
-        console.log(this.props.recipes);
+        // console.log(this.props.recipes);
+        let selectedRecipe = this.props.selectedRecipe;
         recipeSelect = <>
-        <label><input name="recipe" value={-1} type="radio" /> None</label>
+        <label>
+          <input
+            name="recipe"
+            value="none"
+            type="radio"
+            checked={selectedRecipe == null}
+            onChange={this.handleOptionChange} /> None</label>
         {this.props.recipes.map((rec,idx) => <label key={rec.key}>
-          <input name="recipe" value={idx} type="radio" />
-          <img src={itemImg("minecraft:crafting_table", 0)} alt="Crafting" className="tiny-item"/>
+          <input
+            name="recipe"
+            value={idx}
+            type="radio"
+            checked={selectedRecipe === idx}
+            onChange={this.handleOptionChange} />
+          <img src={itemImg("minecraft:crafting_table", 0)} alt="Crafting" className="tiny-item" />
           &mdash;
           {rec.children.map((child,idx) => <React.Fragment key={idx}>
             <img src={itemImg(child.job.itemProps.name, child.job.itemProps.damage)} alt={child.job.itemProps.name} className="tiny-item" />
@@ -286,10 +248,14 @@ class JobNode extends React.Component<JobNodeProps,{}> {
           </React.Fragment>)}
         </label>)}</>
       }
-      let craftCount = this.props.itemProps.count - this.props.invQty;
+      let craftCount = this.props.itemProps.count - this.props.fromInvQty;
       craftInfo = <>
         <div className="job-craft-split">
-          <ScrollableNumberInput value={this.props.invQty} onChange={()=>1} passThru={{className: "from-inv-input"}}/> from inventory, {craftCount} from crafting.
+          <ScrollableNumberInput
+            value={this.props.fromInvQty}
+            onChange={this.handleFromInvQtyChange}
+            passThru={{className: "from-inv-input"}} />
+          from inventory, {craftCount} from crafting.
         </div>
         <form className="job-recipe-select">
           {recipeSelect}
@@ -305,12 +271,14 @@ class JobNode extends React.Component<JobNodeProps,{}> {
         {this.props.topLevel ?
         <SelectableItem
           item={this.props.itemProps}
-          onQtyChange={()=>null}
-          onRemove={()=>null}
+          onQtyChange={this.handleQtyChange}
+          onRemove={this.handleRemove}
+          error={this.props.errors.length > 0}
           mode="editable" />
         :
         <SelectableItem
           item={this.props.itemProps}
+          error={this.props.errors.length > 0}
           mode="static" />}
         <div className="job-indent">{craftInfo}</div>
       </div>
@@ -320,19 +288,22 @@ class JobNode extends React.Component<JobNodeProps,{}> {
 
 type EditableSelectableItemProps = {
   mode: "editable",
-  item: ItemWithCount,
-  onRemove: (item: ItemWithCount) => void,
-  onQtyChange: (item: ItemWithCount, qty: number) => void
+  item: ItemWithCount&HasInvQty,
+  error: boolean,
+  onRemove: (item: ItemWithCount&HasInvQty) => void,
+  onQtyChange: (item: ItemWithCount&HasInvQty, qty: number) => void
 };
 
 type SelectableItemProps = 
   {
     mode: "addable",
-    item: ItemWithCount,
-    onAdd: (item: ItemWithCount) => void
+    item: Item&HasInvQty,
+    error: boolean,
+    onAdd: (item: Item&HasInvQty) => void
   }|EditableSelectableItemProps|{
     mode: "static",
-    item: ItemWithCount
+    error: boolean,
+    item: ItemWithCount&HasInvQty
   };
 
 class SelectableItem extends React.Component<SelectableItemProps, {}> {
@@ -355,6 +326,14 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
         this.onAddRemove();
         break;
       }
+    }
+  }
+
+  handleQtyChange = (newValue: number) => {
+    if(this.props.mode === "editable"){
+      this.props.onQtyChange(this.props.item, newValue)
+    }else{
+      throw "no"
     }
   }
 
@@ -387,12 +366,16 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
     let qtyButtons = null;
     if (this.props.mode === "editable") {
       qtyButtons = <div style={{display: "inline-block"}}>
-        <ScrollableNumberInput value={this.props.item.count} onChange={()=>1} passThru={{style: {width:"5em"}}} />
+        <ScrollableNumberInput value={this.props.item.count} onChange={this.handleQtyChange} passThru={{style: {width:"5em"}}} />
 
         <button type="button">xS</button>
         <button type="button">+S</button>
         <button type="button">-S</button>
       </div>;
+    } else if (this.props.mode === "static") {
+      qtyButtons = <div style={{display: "inline-block"}}>
+        x {this.props.item.count}
+      </div>
     }
     return (
       <div className="iteminfo" style={{display: "flex", padding: "5px"}} id={`item-${this.props.item.id}`}>
@@ -414,10 +397,10 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
         </div>
         <div style={{display: "flex", flexDirection: "column", flexGrow: 1, marginLeft:"5px"}}>
           <span>
-            <b>{this.props.item.displayName}</b>
+            <b style={{color: this.props.error ? "red" : undefined}}>{this.props.item.displayName}</b>
             {qtyButtons}
           </span>
-          <div>Have: <StackCount hideCount={false} count={this.props.item.count} stackSize={this.props.item.maxCount} /></div>
+          <div>Have: <StackCount hideCount={false} count={this.props.item.invQty} stackSize={this.props.item.maxCount} /></div>
           <div>
             {info}
           </div>
@@ -427,29 +410,7 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
   }
 }
 
-// type SelectableItemProps = {
-//   item: ItemWithCount
-// } & ({quantityEditable: true, onChange: (newValue: number)=>any}|{quantityEditable: false});
-
-// class SelectableItem extends React.Component<SelectableItemProps,{}> {
-//   render() {
-//     return (
-//       <div id={"item-" + this.props.item.id}>
-//         <div className="flex-col">
-//           <div className="item-quantity">
-//             {this.props.quantityEditable ? <ScrollableNumberInput value={this.props.item.count} onChange={this.props.onChange}/> : <>{this.props.item.count}</>}
-//           </div>
-//         </div>
-//         <img src={itemImg(this.props.item.name, this.props.item.damage)} className="item-img" />
-//         <div className="flex-col" style={{flexGrow: 1}}>
-
-//         </div>
-//       </div>
-//     );
-//   }
-// }
-
-function searchSql(query:string):Promise<ItemWithCount[]> {
+function searchSql(query:string):Promise<(Item&HasInvQty)[]> {
   let where_clause = "";
   let sql_params:db.SqlValue[] = [];
   let param_idx = 0;
@@ -488,41 +449,317 @@ function searchSql(query:string):Promise<ItemWithCount[]> {
       sql_params.push({ty: "text", val: "%" + q + "%"});
     }
   }
-  let sql = "select item.id, item.fullMeta, item.damage, count.count from item, (select item_id, sum(count) as count from stack group by item_id) count where count.item_id = item.id " + where_clause + "order by id limit 100";
+  let sql = "select item.id, item.fullMeta, item.damage, coalesce(count.count,0) as count from item left join (select item_id, sum(count) as count from stack group by item_id) count on count.item_id = item.id where true " + where_clause + "order by id limit 100";
 
-  //console.log(sql, sql_params);
   return db.sqlQuery(sql, sql_params).then((res:db.SqlValue[][]) => {
     return res.map(row => {
       let fullMeta = row[1].val as ItemMeta;
-      return {count: row[3].val, damage: row[2].val, id: row[0].val, ...fullMeta};
-      //return {id: row[0].val as number, fullMeta, damage: row[2].val as number, count: row[3].val as number}
+      let res:Item&HasInvQty = {invQty: row[3].val as number, damage: row[2].val as number, id: row[0].val as number, ...fullMeta};
+      return res;
     })
   });
 }
-/*
-type JobNodeState = {
-  item: Item,
-*/
 
 type AppState = {
-  searchResults: ItemWithCount[],
+  searchResults: (Item&HasInvQty)[],
   selected: OrderedMap<number, JobNodeProps>,
   searchText: string,
-  searchN: number
+  searchN: number,
+  outputChests: string[],
+  selectedChest: string|null
 };
 
 let searchNAlloc = 1;
+
+function grabJobNodeRecipes(
+  itemId:number
+):Promise<{
+  loading: false,
+  fromInvQty: number,
+  recipes: RecipeProps[],
+  selectedRecipe: null
+}> {
+  return db.sqlQuery(
+    "select id,result,result_count,"+ //idx 0,1,2
+    "slot_1,"+ //idx 3
+    "slot_2,"+
+    "slot_3,"+
+    "slot_4,"+
+    "slot_5,"+
+    "slot_6,"+
+    "slot_7,"+
+    "slot_8,"+
+    "slot_9,"+ //idx 11
+    "out_1,"+ //idx 12
+    "out_2,"+
+    "out_3,"+
+    "out_4,"+
+    "out_5,"+
+    "out_6,"+
+    "out_7,"+
+    "out_8,"+
+    "out_9 "+ //idx 20
+    "from crafting_recipe where result = $1",
+    [{ty:"int4", val: itemId}]
+  ).then((res) => {
+    let recipes:RecipeProps[] = res.map((row) => {
+      let id = row[0].val as number;
+      let result_id = row[1].val as number;
+      let result_count = row[2].val as number;
+      let slot_ids = row.slice(3, 12).map((sqlVal) => sqlVal.val as number|null);
+      let out_ids = row.slice(12, 21).map((sqlVal) => sqlVal.val as number|null);
+
+      let ids = [result_id];
+      for(let id of slot_ids){
+        if(id != null) ids.push(id);
+      }
+      for(let id of out_ids){
+        if(id != null) ids.push(id);
+      }
+      
+      let recipe_children:{qty: number, job: JobNodeProps&{topLevel: false}}[] = [];
+      let slot_counts:Map<number, number> = new Map();
+      for(let slot_id of slot_ids.filter(s => s != null) as number[]) {
+        if(!slot_counts.has(slot_id)) {
+          slot_counts.set(slot_id, 0);
+        }
+        slot_counts.set(slot_id, slot_counts.get(slot_id) as number + 1);
+      }
+      for(let [slot_id, count] of slot_counts.entries()){
+        getItem(slot_id).then((ite) => {
+          recipe_children.push({
+            qty: count,
+            job: {
+              loading: "deferred",
+              topLevel: false as false,
+              itemProps: {...ite, count},
+              errors: []
+            }
+          });
+        })
+      }
+      return {
+        ty: "crafting",
+        children: recipe_children,
+        key: id,
+        result_count
+      };
+    });
+
+    return getCount(itemId).then((invQty) => {
+      return {
+        loading: false as false,
+        fromInvQty: 1,
+        recipes,
+        selectedRecipe: null
+      }
+      // this.setState((state) => {
+      //   let oldProps = state.selected.get(item.id);
+      //   if(!oldProps) throw "blarg";
+      //   let newProps = {
+      //     ...oldProps,
+      //     loading: false as false,
+      //     fromInvQty: Math.min(oldProps.itemProps.count, invQty),
+      //     recipes,
+      //     selectedRecipe: null,
+      //     onSelectedRecipeChange: (newRecipe: number|null) => console.log(newRecipe)
+      //   };
+      //   console.log(newProps);
+      //   return {selected: state.selected.set(item.id, newProps)};
+      // });
+    })
+    
+  });
+}
+
+async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
+  let job_dep_id = (await db.sqlQuery("insert into job_dep_graph (parent) values ($1) returning id", [{ty: "int4", val: parent}]))[0][0].val as number;
+  let fromCraftQty = job.itemProps.count - job.fromInvQty;
+  console.log("fromCraftQty", fromCraftQty);
+  if(job.selectedRecipe == null) return;
+  let recipe = job.recipes[job.selectedRecipe as number];
+  let craftTimes = Math.ceil(fromCraftQty/recipe.result_count);
+  console.log(craftTimes);
+  let stackSize = Math.min(...recipe.children.map(c => c.job.itemProps.maxCount));
+  console.log(stackSize);
+  let quotient = Math.floor(craftTimes/stackSize);
+  console.log(quotient);
+  let remainder = craftTimes%stackSize;
+  for(let i=0;i<quotient;i++){
+    await db.sqlQuery(
+      "insert into job (parent, crafting_recipe_id, item_id, quantity) values ($1, $2, $3, $4)",
+      [
+        {ty: "int4", val: job_dep_id},
+        {ty: "int4", val: recipe.key},
+        {ty: "int4", val: job.itemProps.id},
+        {ty: "int4", val: stackSize}
+      ]
+    )
+  }
+  if(remainder > 0){
+    await db.sqlQuery(
+      "insert into job (parent, crafting_recipe_id, item_id, quantity) values ($1, $2, $3, $4)",
+      [
+        {ty: "int4", val: job_dep_id},
+        {ty: "int4", val: recipe.key},
+        {ty: "int4", val: job.itemProps.id},
+        {ty: "int4", val: remainder}
+      ]
+    )
+  }
+  for(let {job} of recipe.children) {
+    await submitJob(job as JobNodeProps&{loading: false}, job_dep_id);
+  }
+}
+
+async function submitJobs(jobs: OrderedMap<number, JobNodeProps&{loading: false}>, out: string|null){
+  console.log("out is", out);
+  await db.sqlQuery("START TRANSACTION",[]);
+  let rootNode = (await db.sqlQuery("insert into job_dep_graph (parent) VALUES (NULL) returning id", []))[0][0].val as number;
+  for(let [_, job] of jobs.entries()){
+    await submitJob(job, rootNode);
+    if(out != null){
+      let stackSize = job.itemProps.maxCount;
+      let quotient = Math.floor(job.itemProps.count/stackSize);
+      let remainder = job.itemProps.count%stackSize
+      for(let i=0;i<quotient;i++){
+        await db.sqlQuery(
+          "insert into job (parent, chest_computer, chest_name, item_id, quantity) values ($1, $2, $3, $4, $5)",
+          [
+            {ty: "int4", val: rootNode},
+            {ty: "int4", val: 55},
+            {ty: "text", val: out},
+            {ty: "int4", val: job.itemProps.id},
+            {ty: "int4", val: stackSize}
+          ]
+        )
+      }  
+      if(remainder > 0){
+        await db.sqlQuery(
+          "insert into job (parent, chest_computer, chest_name, item_id, quantity) values ($1, $2, $3, $4, $5)",
+          [
+            {ty: "int4", val: rootNode},
+            {ty: "int4", val: 55},
+            {ty: "text", val: out},
+            {ty: "int4", val: job.itemProps.id},
+            {ty: "int4", val: remainder}
+          ]
+        )
+      }
+    }
+    
+  }
+  await db.sqlQuery("COMMIT",[]);
+}
 
 class App extends React.Component<{},AppState> {
   state:AppState = {
     searchResults: [],
     selected: OrderedMap<number, JobNodeProps>(),
     searchText: "",
-    searchN: 0
+    searchN: 0,
+    outputChests: [],
+    selectedChest: null
   };
+  submitJob = () => {
+    submitJobs(this.state.selected as OrderedMap<number, JobNodeProps&{loading: false}>, this.state.selectedChest);
+    this.setState({selected: OrderedMap()})
+  }
+  jobNodeAddValidation<T extends boolean>(
+    path: JobPath,
+    job: (JobNodeProps&{topLevel: T}),
+    newCount?: number
+  ): (JobNodeProps&{topLevel: T}) {
+    let errors:string[] = [];
+    if(job.loading === false){
+      if(newCount != null){
+        let oldCount = job.itemProps.count;
+        job.itemProps.count = newCount;
+        job.fromInvQty = Math.min(job.itemProps.invQty, newCount);
+      }
+      if(job.topLevel){
+        if(job.itemProps.count < job.fromInvQty){
+          errors.push("Grabbing more from inventory than is needed.")
+        }
+        if(job.itemProps.count <= 0){
+          errors.push("count must be positive.")
+        }
+      }
+      if(job.fromInvQty < 0){
+        errors.push("'from inventory' quantity must be positive or 0.");
+      }
+      if(job.fromInvQty > job.itemProps.invQty){
+        errors.push("Trying to grab more from inventory then is available.");
+      }
+      if(job.itemProps.count > job.fromInvQty && job.selectedRecipe == null){
+        errors.push("Set to craft, but no recipe selected.")
+      }
+      if(job.selectedRecipe != null){
+        let rec = job.recipes[job.selectedRecipe];
+        for(let [idx,child] of rec.children.entries()){
+          let newJob = this.jobNodeAddValidation(
+            path.push([job.selectedRecipe, idx]),
+            child.job,
+            /*newCount == null ? undefined : */child.qty * Math.ceil((job.itemProps.count-job.fromInvQty)/rec.result_count)
+          );
+          if(newJob.errors.length > 0){
+            errors.push("Child job has errors.");
+          }
+          child.job = newJob;
+        }
+      }
+    }else{
+      let id = job.itemProps.id;
+      grabJobNodeRecipes(id).then((props) => {
+        this.updateJob(path, (j) => {
+          return this.jobNodeAddValidation(path, {...j, ...props});
+        })
+        // this.setState((state) => {
+        //   let old:JobNodeProps|undefined = state.selected.get(id);
+        //   if(old == null) throw "bad";
+        //   let newUnvalidated:JobNodeProps = {...old, ...props};
+        //   let newJob = this.jobNodeAddValidation(path, newUnvalidated)
+        //   return {selected: state.selected.set(id, newJob)}
+        // })
+      })
+    }
+    return {
+      ...job,
+      errors
+    }
+  }
+  updateJob(path: JobPath, f:(j:JobNodeProps) => JobNodeProps){
+    this.setState((state) => {
+      let topId = path.first() as number;
+      let lowerPath = path.shift() as List<[number,number]>;
+      let topRef:{job: JobNodeProps} = {job: cloneDeep(state.selected.get(topId)) as JobNodeProps};
+      let job = topRef.job;
+      let ref = topRef;
+      for(let [recipeIdx, childIdx] of lowerPath){
+        ref = (job as JobNodeProps&{loading:false}).recipes[recipeIdx].children[childIdx];
+        job = ref.job;
+      }
+      let oldCount = job.itemProps.count;
+      ref.job = f(cloneDeep(job) as JobNodeProps);
+      return {
+        selected: state.selected.set(
+          topId,
+          this.jobNodeAddValidation(
+            List([topId]),
+            topRef.job,
+            oldCount == job.itemProps.count ? undefined : job.itemProps.count
+          )
+        )
+      }
+    })
+  }
   componentDidMount(){
     console.log("mounting run");
-    this.onSearch({target: {value: "oak wood plan"}});
+    db.sqlQuery("select name from chest where ty='output'",[]).then((res) => {
+      let oc = res.map((row) => row[0].val as string)
+      this.setState({outputChests: oc, selectedChest: oc[0] || null});
+    })
+    this.onSearch({target: {value: "mc:stick"}});
   }
   onSearch = (ev:{target: {value: string}}) => {
     console.log("onSearch");
@@ -530,111 +767,40 @@ class App extends React.Component<{},AppState> {
     searchNAlloc += 1;
     let searchText = ev.target.value;
     this.setState({searchText});
-    searchSql(searchText).then((res: ItemWithCount[]) => {
+    searchSql(searchText).then((res: (Item&HasInvQty)[]) => {
       this.setState((state) => (state.searchN < allocd ? {searchN: allocd, searchResults: res} : null));
     });
   }
-  onAdd = (item: Item) => {
+  onAdd = (item: Item&HasInvQty) => {
     this.setState((state) => {
       let props:JobNodeProps = {
-        /*itemProps: {
-          //editMode: true,
-          item,
-          quantity: 1,
-          onRemove: this.onRemove,
-          onQtyChange: ()=>1
-        },*/
         itemProps: {...item, count: 1},
         topLevel: true,
-        loading: true
+        loading: true,
+        errors: []
       };
       return {
-        selected: state.selected.set(item.id, props)
+        selected: state.selected.set(item.id, this.jobNodeAddValidation(List([item.id]),props,1))
       }
     });
-    db.sqlQuery(
-      "select id,result,result_count,"+ //idx 0,1,2
-      "slot_1,"+ //idx 3
-      "slot_2,"+
-      "slot_3,"+
-      "slot_4,"+
-      "slot_5,"+
-      "slot_6,"+
-      "slot_7,"+
-      "slot_8,"+
-      "slot_9,"+ //idx 11
-      "out_1,"+ //idx 12
-      "out_2,"+
-      "out_3,"+
-      "out_4,"+
-      "out_5,"+
-      "out_6,"+
-      "out_7,"+
-      "out_8,"+
-      "out_9 "+ //idx 20
-      "from crafting_recipe where result = $1",
-      [{ty:"int4", val: item.id}]
-    ).then((res) => {
-      let recipes:RecipeProps[] = res.map((row) => {
-        let id = row[0].val as number;
-        let result_id = row[1].val as number;
-        let result_count = row[2].val as number;
-        let slot_ids = row.slice(3, 12).map((sqlVal) => sqlVal.val as number|null);
-        let out_ids = row.slice(12, 21).map((sqlVal) => sqlVal.val as number|null);
-
-        let ids = [result_id];
-        for(let id of slot_ids){
-          if(id != null) ids.push(id);
-        }
-        for(let id of out_ids){
-          if(id != null) ids.push(id);
-        }
-        // let result:Item = ItemsCache.get(result_id) as Item;
-        // let slots:(Item|null)[] = slot_ids.map((id) => id == null ? null : ItemsCache.get(id) as Item);
-        // let outs: (Item|null)[] =  out_ids.map((id) => id == null ? null : ItemsCache.get(id) as Item);
-        
-        let recipe_children:{qty: number, job: JobNodeProps}[] = [];
-        let slot_counts:Map<number, number> = new Map();
-        for(let slot_id of slot_ids.filter(s => s != null) as number[]) {
-          if(!slot_counts.has(slot_id)) {
-            slot_counts.set(slot_id, 0);
-          }
-          slot_counts.set(slot_id, slot_counts.get(slot_id) as number + 1);
-        }
-        for(let [slot_id, count] of slot_counts.entries()){
-          getItem(slot_id).then((ite) => {
-            recipe_children.push({
-              qty: count,
-              job: {
-                loading: "deferred",
-                topLevel: false,
-                itemProps: {...ite, count}
-              }
-            });
-          })
-        }
-        return {
-          ty: "crafting",
-          children: recipe_children,
-          key: id,
-          result_count
-        };
-      });
-
-      getCount(item.id).then((invQty) => {
-        this.setState((state) => {
-          let oldProps = state.selected.get(item.id);
-          if(!oldProps) throw "blarg";
-          let newProps = {...oldProps, loading: false as false, invQty, recipes, selectedRecipe: null};
-          console.log(newProps);
-          return {selected: state.selected.set(item.id, newProps)};
-        });
-      })
-      
-    });
+    
   }
   onRemove = (item: Item) => {
     this.setState((state) => ({selected: state.selected.delete(item.id)}));
+  }
+  handleSelectedRecipeChange = (path:JobPath, idx:number|null) => {
+    this.updateJob(path, (j) => ({...j, selectedRecipe: idx}));
+  }
+  handleRemove = (path: JobPath) => {
+    this.setState((state) => {
+      return {selected: state.selected.remove(path.first() as number)}
+    });
+  }
+  handleQtyChange = (path: JobPath, newQty: number) => {
+    this.updateJob(path, (j) => ({...j, itemProps: {...j.itemProps, count: newQty}}));
+  }
+  handleFromInvQtyChange = (path: JobPath, newQty: number) => {
+    this.updateJob(path, (j) => ({...j, fromInvQty: newQty}));
   }
   render(){
     return (
@@ -645,9 +811,36 @@ class App extends React.Component<{},AppState> {
         <hr />
         <div id="job-editor">
           <div id="selected-jobs">
-            {this.state.selected.entrySeq().map((a:[number, JobNodeProps]) => <JobNode key={a[0]} {...a[1]} />).toArray()}
+            {this.state.selected.entrySeq().map((a:[number, JobNodeProps]) => 
+              <JobNode
+                key={a[0]}
+                {...a[1]}
+                path={List([a[0]])}
+                onSelectedRecipeChange={this.handleSelectedRecipeChange}
+                onRemove={this.handleRemove}
+                onQtyChange={this.handleQtyChange}
+                onFromInvQtyChange={this.handleFromInvQtyChange} />
+            ).toArray()}
           </div>
-          <button type="button">Go</button>
+          <select
+            onChange={(ev) => this.setState({selectedChest: ev.target.value === "none" ? null : ev.target.value})}>
+            <option
+              value="none"
+              selected={this.state.selectedChest === null}>
+              None/Keep in inventory
+            </option>
+            {
+              this.state.outputChests.map((cname) => 
+                <option
+                  key={cname}
+                  value={cname}
+                  selected={this.state.selectedChest === cname}>
+                  {cname}
+                </option>
+              )
+            }
+          </select>
+          <button type="button" onClick={this.submitJob}>Go</button>
         </div>
         <hr />
         <div><input type="text" placeholder="search" style={{width: "500px", maxWidth: "100%"}} value={this.state.searchText} onChange={this.onSearch} /></div>
@@ -656,7 +849,7 @@ class App extends React.Component<{},AppState> {
             if (this.state.selected.has(s.id)){
               return null
             } else {
-              return <SelectableItem key={s.id} item={s} onAdd={this.onAdd} mode="addable"/>
+              return <SelectableItem key={s.id} item={s} onAdd={this.onAdd} mode="addable" error={false}/>
             }
           })}
         </div>
@@ -664,29 +857,5 @@ class App extends React.Component<{},AppState> {
     );
   }
 }
-// function App() {
-//   const item = {
-//     count: 200,
-//     damage: 0,
-//     displayName: "String",
-//     fullMeta: {
-//       count: 1,
-//       damage: 0,
-//       displayName: "String",
-//       maxCount: 64,
-//       maxDamage: 0,
-//       name: "minecraft:string",
-//       //ores: {...}
-//       rawName: "item.string"
-//     },
-//     id: 119
-//   };
-//   return (
-//     <div className="App">
-//       <SelectableItem item={item} />
-//       <ScrollableTestWrapper />
-//     </div>
-//   );
-// }
 
 export default App;
