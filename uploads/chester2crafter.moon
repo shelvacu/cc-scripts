@@ -40,7 +40,7 @@ getStackSize = (item_id) ->
     stackSize = db\query(
         "select fullmeta->'maxCount' from item where id=$1",
         {ty: "int4", val: item_id}
-    )
+    )[1][1].val
     stackSizeCache[item_id] = stackSize
     return stackSize
 
@@ -68,7 +68,13 @@ main = ->
             "select result, result_count, slot_1, slot_2, slot_3, slot_4, slot_5, slot_6, slot_7, slot_8, slot_9, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8, out_9 from crafting_recipe where id = $1",
             {ty: "int4", val: crafting_recipe_id}
         )
-        row = res[1]
+        db_row = res[1]
+        row = {}
+        for i,v in ipairs(db_row)
+            if v.ty == "null"
+                row[i] = nil
+            else
+                row[i] = v.val
         result_item_id = row[1]
         result_count = row[2]
         slots = splice(row,3,11)
@@ -82,13 +88,15 @@ main = ->
                     item_inputs[slots[i]] = 0
                 item_inputs[slots[i]] += 1
             if outs[i] != nil
-                if item_outputs[slots[i]] == nil
-                    item_outputs[slots[i]] = 0
-                item_outputs[slots[i]] += 1
+                if item_outputs[outs[i]] == nil
+                    item_outputs[outs[i]] = 0
+                item_outputs[outs[i]] += 1
         for k,v in pairs(item_inputs)
             item_inputs[k] = v*quantity
         for k,v in pairs(item_outputs)
-            item_outputs[k] = v*quantity
+            print(textutils.serialise(v))
+            item_outputs[k] = v*quantity*result_count
+        reserved_stack_ids = {-1}
         input_reservations = {} -- item_id => {slot, qty}[]
         for item_id, quantity in pairs(item_inputs)
             stackSize = getStackSize(item_id)
@@ -98,20 +106,20 @@ main = ->
                 res = {}
                 if quantity - quantity_reserved >= stackSize
                     res = db\query(
-                        "select chest_computer, chest_name, slot, count from stack where item_id = $1 and count = $2 limit 1 for no key update skip locked",
+                        "select chest_computer, chest_name, slot, count, id from stack where item_id = $1 and count = $2 and id not in ("..table.concat(reserved_stack_ids,",")..") limit 1 for no key update skip locked",
                         {ty: "int4", val: item_id},
                         {ty: "int4", val: stackSize}
                     )
                 if #res == 0
                     --do it again, but this any count
                     res = db\query(
-                        "select chest_computer, chest_name, slot, count from stack where item_id = $1 limit 1 for no key update skip locked",
+                        "select chest_computer, chest_name, slot, count, id from stack where item_id = $1 and id not in ("..table.concat(reserved_stack_ids,",")..") limit 1 for no key update skip locked",
                         {ty: "int4", val: item_id}
                     )
                 if #res == 0
                     --do it again, but this time don't SKIP LOCKED
                     res = db\query(
-                        "select chest_computer, chest_name, slot, count from stack where item_id = $1 order by count desc limit 1 for no key update",
+                        "select chest_computer, chest_name, slot, count, id from stack where item_id = $1 and id not in ("..table.concat(reserved_stack_ids,",")..") order by count desc limit 1 for no key update",
                         {ty: "int4", val: item_id}
                     )
                 if #res == 0
@@ -120,12 +128,13 @@ main = ->
                     return
                 row = res[1]
                 reservation = {
-                    chest_computer: row[1],
-                    chest_name: row[2],
-                    slot: row[3],
-                    count: row[4],
+                    chest_computer: row[1].val,
+                    chest_name: row[2].val,
+                    slot: row[3].val,
+                    count: row[4].val,
                     item_id: item_id
                 }
+                reserved_stack_ids[#reserved_stack_ids + 1] = row[5].val
                 quantity_reserved += reservation.count
                 reservations[#reservations + 1] = reservation
             input_reservations[item_id] = reservations
@@ -136,11 +145,11 @@ main = ->
             quantity_reserved = 0
             while quantity_reserved < quantity
                 res = db\query(
-                    "select chest_computer, chest_name, slot from stack where item_id IS NULL and count = 0 limit 1 for no key update skip locked"
+                    "select chest_computer, chest_name, slot, id from stack where item_id IS NULL and count = 0 and id not in ("..table.concat(reserved_stack_ids,",")..") limit 1 for no key update skip locked"
                 )
                 if #res == 0
                     res = db\query(
-                        "select chest_computer, chest_name, slot from stack where item_id IS NULL and count = 0 limit 1 for no key update"
+                        "select chest_computer, chest_name, slot, id from stack where item_id IS NULL and count = 0 and id not in ("..table.concat(reserved_stack_ids,",")..") limit 1 for no key update"
                     )
                 if #res == 0
                     db\query("rollback")
@@ -148,33 +157,55 @@ main = ->
                     return
                 row = res[1]
                 reservation = {
-                    chest_computer: row[1],
-                    chest_name: row[2],
-                    slot: row[3],
+                    chest_computer: row[1].val,
+                    chest_name: row[2].val,
+                    slot: row[3].val,
                     count: 0,
                     item_id: item_id
                 }
+                reserved_stack_ids[#reserved_stack_ids + 1] = row[4].val
                 reservations[#reservations + 1] = reservation
                 quantity_reserved += stackSize
             output_reservations[item_id] = reservations
         used_input_reservations = {}
         for i=1,9
-            continue if slot[i] == nil
-            item_id = slot[i]
+            print("doing slot "..i.." which has "..textutils.serialise(slots[i]))
+            sleep(1)
+            continue if slots[i] == nil
+            item_id = slots[i]
+            this_item_reservations = input_reservations[item_id]
             turtle_slot = craftingSlotToTurtleSlot[i]
             while turtle.getItemCount(turtle_slot) < result_count
-                reservation = input_reservations[item_id][#input_reservations]
+                reservation = this_item_reservations[#this_item_reservations]
+                if reservation.count == 0
+                    error("count is 0!!!")
                 num_to_move = math.min(reservation.count, result_count - turtle.getItemCount(turtle_slot))
+                print("wrapped '"..reservation.chest_name.."'")
                 chest = peripheral.wrap(reservation.chest_name)
+                turtleCountBefore = turtle.getItemCount(turtle_slot)
+                print(textutils.serialise{m:myName, s:reservation.slot, n:num_to_move, t:turtle_slot})
                 transferred = chest.pushItems(myName, reservation.slot, num_to_move, turtle_slot)
+                turtleCountAfter = turtle.getItemCount(turtle_slot)
+                otherTransferred = turtleCountAfter - turtleCountBefore
+                if transferred ~= otherTransferred
+                    print("WARN: Bad transferred value "..transferred..", actually transferred "..otherTransferred)
+                    transferred = otherTransferred
                 if num_to_move ~= transferred
                     db\query("rollback")
-                    error("Turtle crafter transfer failed! Expected "..num_to_move.." items pushed, instead "..transferred.." were pushed. Item#"..item_id..", from "..from_slot.." to " .. chest_name .. ":" .. to_slot .. ". Rescan needed.")
-                    return
+                    print("tcrf "..reservation.chest_name)
+                    sleep(1000)
+                    error("Turtle crafter transfer failed! Expected "..num_to_move.." items pushed, instead "..transferred.." were pushed. Item#"..item_id..", from " .. reservation.chest_name .. ":" .. reservation.slot .." to " .. myName .. ":" .. turtle_slot .. ". Rescan needed.")
+                    --return
+                
+                --print "count before "..reservation.count
                 reservation.count -= transferred
+                --print "count after "..reservation.count
                 if reservation.count == 0
+                    --print "removing reservation"
                     used_input_reservations[#used_input_reservations + 1] = reservation
-                    input_reservations[item_id][#input_reservations[item_id]] = nil
+                    --print "b4 "..#this_item_reservations
+                    table.remove(this_item_reservations, #this_item_reservations)
+                    --print "af "..#this_item_reservations
         --After a billion years of preparation, we're finally ready
         --DO. THE. CRAFT
         res = turtle.craft()
@@ -194,7 +225,7 @@ main = ->
             else
                 item_id = result_item_id
             stackSize = getStackSize(item_id)
-            this_item_reservations = output_reservations[actual_item_id]
+            this_item_reservations = output_reservations[item_id]
             while turtle.getItemCount(i) > 0
                 reservation = this_item_reservations[#this_item_reservations]
                 c = peripheral.wrap(reservation.chest_name)
@@ -205,29 +236,29 @@ main = ->
                     this_item_reservations[#this_item_reservations] = nil
         for _,res in ipairs(used_input_reservations)
             if res.count == 0
-                db.query(
+                db\query(
                     "update stack set item_id = NULL, count = 0 where chest_computer = $1 and chest_name = $2 and slot = $3",
                     {ty: "int4", val: res.chest_computer},
-                    {ty: "int4", val: res.chest_name},
-                    {ty: "int4", val: res.slot}
+                    {ty: "text", val: res.chest_name},
+                    {ty: "int2", val: res.slot}
                 )
             else
-                db.query(
+                db\query(
                     "update stack set count = $4 where chest_computer = $1 and chest_name = $2 and slot = $3",
                     {ty: "int4", val: res.chest_computer},
-                    {ty: "int4", val: res.chest_name},
-                    {ty: "int4", val: res.slot},
+                    {ty: "text", val: res.chest_name},
+                    {ty: "int2", val: res.slot},
                     {ty: "int4", val: res.count}
                 )
         for _,res in ipairs(used_output_reservations)
             continue if res.count == 0
-            db.query(
+            db\query(
                 "update stack set item_id = $1, count = $2 where chest_computer = $3 and chest_name = $4 and slot = $5",
                     {ty: "int4", val: res.item_id},
                     {ty: "int4", val: res.count},
                     {ty: "int4", val: res.chest_computer},
-                    {ty: "int4", val: res.chest_name},
-                    {ty: "int4", val: res.slot}
+                    {ty: "text", val: res.chest_name},
+                    {ty: "int2", val: res.slot}
             )
         db\query(
             "update job set finished = true where id = $1", 

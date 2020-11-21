@@ -1,5 +1,4 @@
 local db = require("db"):default()
-local mp = require("mp")
 local wired_modem
 print("find wired modem")
 for _, mod in ipairs({
@@ -22,14 +21,33 @@ process = function()
 end
 local main
 main = function()
-  local chests = db:query("select name, ty from chest where computer = $1;", {
-    ty = "int4",
-    val = my_id
-  })
+  local chests = nil
+  if tArgs[2] == nil then
+    chests = db:query("select name, ty from chest where computer = $1;", {
+      ty = "int4",
+      val = my_id
+    })
+  elseif tArgs[2] == "cake" then
+    chests = db:query("select name, ty from chest where computer = $1 and name in (select chest_name from stack where item_id in (15429, 15674, 10764, 4128, 21405, 4110) group by chest_name)", {
+      ty = "int4",
+      val = my_id
+    })
+  else
+    chests = {
+      table.unpack(tArgs, 2, #tArgs)
+    }
+  end
   for i, row in ipairs(chests) do
     print("chest " .. i .. " of " .. #chests)
-    local name = row[1].val
-    local chest_ty = row[2].val
+    local name = nil
+    local chest_ty = nil
+    if type(row) == "string" then
+      name = row
+      chest_ty = "storage"
+    else
+      name = row[1].val
+      chest_ty = row[2].val
+    end
     local stacks = db:query("select stack.slot, stack.count, item.name, item.damage, item.nbtHash from stack left join item on stack.item_id = item.id where stack.chest_computer = $1 and stack.chest_name = $2", {
       ty = "int4",
       val = my_id

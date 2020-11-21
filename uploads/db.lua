@@ -15,6 +15,7 @@ function Connection:new(url, use_id)
   if not res[1] then
     error(res[2])
   end
+  conn.msgid_inc = 1
   conn.address = url
   conn.internal = res[1]
   if use_id == nil then
@@ -29,13 +30,18 @@ end
 function Connection:default()
   local this_id = conn_id
   conn_id = conn_id + 1
-  return self:new("ws://10.244.65.57:7648/?"+this_id, this_id)
+  return self:new("ws://10.244.65.57:7648/?"..this_id, this_id)
 end
 
 function Connection:process()
+  if doDebug then
+    print("process running for "..self.address)
+  end
   while true do
     local evName, address, data, isBinary = os.pullEvent("websocket_message")
-    --print(address)
+    if doDebug then
+      print(address)
+    end
     if address == self.address then
       local parsed = mp.unpack(data)
       local message_name
@@ -74,15 +80,24 @@ end
 
 function Connection:query(q, ...)
   --if params == nil then params = {} end
-  params = mp.configWrapper(setmetatable({...}, {isSequence = true}), {recode = true, convertNull = true})
-  local msgid = self.msgid_inc
+  local tArgs = {...}
+  if doDebug then
+    print(debug.traceback())
+    print("original args "..textutils.serialise(tArgs))
+  end
+  local params = mp.configWrapper(setmetatable(tArgs, {isSequence = true}), {recode = true, convertNull = true})
+  local msgid = self.msgid_inc or 1
   if doDebug then
     print("Sending query "..msgid.." with "..(#params.val).." params")
     print("  Query: "..q);
   end
   self.msgid_inc = msgid + 1
   --print"sending"
-  self.internal.send(mp.pack{ty = "query", statement = q, params = params, msgid = msgid}, true)
+  local the_msg = {ty = "query", statement = q, params = params, msgid = msgid}
+  if doDebug then
+    print(textutils.serialise(the_msg))
+  end
+  self.internal.send(mp.pack(the_msg), true)
   --print"sent; waiting"
   while true do
     local evName, connid, msg = os.pullEvent("database_message")
@@ -99,7 +114,7 @@ end
 
 function Connection:prepare(q)
   local msgid = self.msgid_inc
-  self.msgid_ic = msgid + 1
+  self.msgid_inc = msgid + 1
   self.internal.send(mp.pack{ty = "prepare", statement = q, msgid = msgid}, true)
   while true do
     local evName, connid, msg = os.pullEvent("database_message")

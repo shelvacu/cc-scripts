@@ -1,5 +1,11 @@
 local mp = require("mp")
 return {
+  starts_with = function(str, start)
+    return str:sub(1, #start) == start
+  end,
+  ends_with = function(str, ending)
+    return ending == "" or str:sub(-#ending) == ending
+  end,
   insertOrGetId = function(db, meta)
     if meta == nil then
       return nil

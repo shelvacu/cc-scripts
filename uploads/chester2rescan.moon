@@ -1,5 +1,5 @@
 db = require("db")\default!
-mp = require("mp")
+--mp = require("mp")
 
 local wired_modem
 
@@ -18,16 +18,32 @@ process = ->
   db\process!
 
 main = ->
-  chests = db\query("select name, ty from chest where computer = $1;", {ty: "int4", val: my_id})
+  chests = nil
+  if tArgs[2] == nil
+    chests = db\query("select name, ty from chest where computer = $1;", {ty: "int4", val: my_id})
+  elseif tArgs[2] == "cake"
+    chests = db\query("select name, ty from chest where computer = $1 and name in (select chest_name from stack where item_id in (15429, 15674, 10764, 4128, 21405, 4110) group by chest_name)", {ty: "int4", val: my_id})
+  else
+    chests = {table.unpack(tArgs, 2, #tArgs)}
+  --print(textutils.serialise(tArgs))
+  --print(textutils.serialise(chests))
   for i,row in ipairs chests
     print("chest " .. i .. " of " .. #chests)
-    name = row[1].val
-    chest_ty = row[2].val
+    name = nil
+    chest_ty = nil
+    if type(row) == "string"
+      name = row
+      chest_ty = "storage"
+    else
+      name = row[1].val
+      chest_ty = row[2].val
+    --print("called "..name)
     stacks = db\query(
       "select stack.slot, stack.count, item.name, item.damage, item.nbtHash from stack left join item on stack.item_id = item.id where stack.chest_computer = $1 and stack.chest_name = $2",
       {ty: "int4", val: my_id},
       {ty: "text", val: name}
     )
+    --print("has "..#stacks.." stacks")
     for _,row in ipairs stacks
       if chest_ty ~= 'storage' -- and has more than 0 stacks
         print(name .. " is ty " .. chest_ty .. " but has stacks associated!")
