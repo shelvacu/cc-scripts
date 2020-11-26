@@ -153,20 +153,20 @@ job_output_thread = function(db)
       else
         db:query("update job set finished = true, quantity = $1 where id = $2", {
           ty = "int4",
-          transferred
+          val = transferred
         }, {
           ty = "int4",
-          job_id
+          val = job_id
         })
         db:query("insert into job (parent, chest_computer, chest_name, item_id, quantity, finished) VALUES ($1, $2, $3, $4, $5, false)", {
           ty = "int4",
           val = job_parent_id
         }, {
           ty = "int4",
-          val = chest_computer
+          val = out_chest_computer
         }, {
           ty = "text",
-          val = chest_name
+          val = out_chest_name
         }, {
           ty = "int4",
           val = item_id
