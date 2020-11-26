@@ -1,3 +1,4 @@
+require("paranoidLogger")("chester2crafter")
 local dblib = require("db")
 local db = dblib:default()
 local common = require("chestercommon")
@@ -202,7 +203,6 @@ main = function()
         local _continue_1 = false
         repeat
           print("doing slot " .. i .. " which has " .. textutils.serialise(slots[i]))
-          sleep(1)
           if slots[i] == nil then
             _continue_1 = true
             break
@@ -210,12 +210,12 @@ main = function()
           local item_id = slots[i]
           local this_item_reservations = input_reservations[item_id]
           local turtle_slot = craftingSlotToTurtleSlot[i]
-          while turtle.getItemCount(turtle_slot) < quantity do
+          while turtle.getItemCount(turtle_slot) < result_count do
             local reservation = this_item_reservations[#this_item_reservations]
             if reservation.count == 0 then
               error("count is 0!!!")
             end
-            local num_to_move = math.min(reservation.count, quantity - turtle.getItemCount(turtle_slot))
+            local num_to_move = math.min(reservation.count, result_count - turtle.getItemCount(turtle_slot))
             print("wrapped '" .. reservation.chest_name .. "'")
             local chest = peripheral.wrap(reservation.chest_name)
             local turtleCountBefore = turtle.getItemCount(turtle_slot)
@@ -229,7 +229,7 @@ main = function()
             local turtleCountAfter = turtle.getItemCount(turtle_slot)
             local otherTransferred = turtleCountAfter - turtleCountBefore
             if transferred ~= otherTransferred then
-              error("WARN: Bad transferred value " .. transferred .. ", actually transferred " .. otherTransferred)
+              print("WARN: Bad transferred value " .. transferred .. ", actually transferred " .. otherTransferred)
               transferred = otherTransferred
             end
             if num_to_move ~= transferred then
@@ -251,6 +251,7 @@ main = function()
         end
       end
       res = turtle.craft()
+      sleep(1)
       if not res then
         db:query("rollback")
         error("Failed to craft. Rescan needed")
@@ -276,11 +277,15 @@ main = function()
           while turtle.getItemCount(i) > 0 do
             local reservation = this_item_reservations[#this_item_reservations]
             local c = peripheral.wrap(reservation.chest_name)
+            print("transferring to " .. reservation.chest_name .. ":" .. reservation.slot .. " which has " .. reservation.count)
             local transferred = c.pullItems(myName, i, stackSize - reservation.count, reservation.slot)
+            if transferred == 0 then
+              error("err, transferred ZERO. Rescan needed at least on " .. reservation.chest_name .. ":" .. reservation.slot)
+            end
             reservation.count = reservation.count + transferred
             if reservation.count == stackSize then
               used_output_reservations[#used_output_reservations + 1] = reservation
-              this_item_reservations[#this_item_reservations] = nil
+              table.remove(this_item_reservations, #this_item_reservations)
             end
           end
           _continue_1 = true

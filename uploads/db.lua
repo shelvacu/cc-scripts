@@ -4,11 +4,16 @@ local Connection = {msgid_inc = 1}
 
 local conn_id = 1
 
-local doDebug = settings.get("db.debug", false)
+--local doDebug = settings.get("db.debug", false)
+local doDebug = true
+
+if paraLog == nil then
+  error("paraLog required")
+end
 
 function Connection:new(url, use_id)
   if doDebug then
-    print("Connecting to "..url)
+    paraLog.log("Connecting to", url)
   end
   local conn = setmetatable({}, {__index = self})
   local res = {http.websocket(url)}
@@ -35,22 +40,19 @@ end
 
 function Connection:process()
   if doDebug then
-    print("process running for "..self.address)
+    paraLog.log("Connection:process running for",self.address)
   end
   while true do
     local evName, address, data, isBinary = os.pullEvent("websocket_message")
-    if doDebug then
-      print(address)
-    end
     if address == self.address then
       local parsed = mp.unpack(data)
       local message_name
       --print(#data)
       if doDebug then
-        print(textutils.serialise(parsed))
+        paraLog.log("parsed", textutils.serialise(parsed))
       end
       if parsed.ty == "error" and parsed.id == nil then
-        error("Error from server: " .. parsed.msg)
+        paraLog.die("Error from server:", parsed.msg)
       end
       if parsed.ty == "notification" then
         --print("got notification " .. textutils.serialise(parsed))
@@ -82,20 +84,18 @@ function Connection:query(q, ...)
   --if params == nil then params = {} end
   local tArgs = {...}
   if doDebug then
-    print(debug.traceback())
-    print("original args "..textutils.serialise(tArgs))
+    paraLog.logbt("Connection:query", tArgs)
   end
   local params = mp.configWrapper(setmetatable(tArgs, {isSequence = true}), {recode = true, convertNull = true})
   local msgid = self.msgid_inc or 1
   if doDebug then
-    print("Sending query "..msgid.." with "..(#params.val).." params")
-    print("  Query: "..q);
+    paraLog.log("msgid", msgid)
   end
   self.msgid_inc = msgid + 1
   --print"sending"
   local the_msg = {ty = "query", statement = q, params = params, msgid = msgid}
   if doDebug then
-    print(textutils.serialise(the_msg))
+    paraLog.log("the_msg", the_msg)
   end
   self.internal.send(mp.pack(the_msg), true)
   --print"sent; waiting"
@@ -106,7 +106,7 @@ function Connection:query(q, ...)
       if msg.ty == "results" then
         return msg.rows
       elseif msg.ty == "error" then
-        error(msg.msg)
+        paraLog.die("db error",msgid, msg.msg)
       end
     end
   end

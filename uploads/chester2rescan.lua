@@ -1,3 +1,4 @@
+require("paranoidLogger")("chester2rescan")
 local db = require("db"):default()
 local wired_modem
 print("find wired modem")
@@ -21,7 +22,12 @@ process = function()
 end
 local main
 main = function()
+  local doFix = tArgs[1] == "fix" or tArgs[1] == "quickfix"
+  local doQuick = tArgs[1] == "quick" or tArgs[1] == "quickfix"
   local chests = nil
+  db:query("start transaction")
+  db:query("LOCK chest")
+  db:query("LOCK stack")
   if tArgs[2] == nil then
     chests = db:query("select name, ty from chest where computer = $1;", {
       ty = "int4",
@@ -48,6 +54,10 @@ main = function()
       name = row[1].val
       chest_ty = row[2].val
     end
+    paraLog.log("scanning chest", {
+      name = name,
+      chest_ty = chest_ty
+    })
     local stacks = db:query("select stack.slot, stack.count, item.name, item.damage, item.nbtHash from stack left join item on stack.item_id = item.id where stack.chest_computer = $1 and stack.chest_name = $2", {
       ty = "int4",
       val = my_id
@@ -55,6 +65,10 @@ main = function()
       ty = "text",
       val = name
     })
+    local quickList
+    if doQuick then
+      quickList = peripheral.call(name, "list")
+    end
     for _, row in ipairs(stacks) do
       if chest_ty ~= 'storage' then
         print(name .. " is ty " .. chest_ty .. " but has stacks associated!")
@@ -65,15 +79,26 @@ main = function()
       local item_name = row[3].val
       local item_damage = row[4].val
       local item_nbtHash = row[5].val
-      local meta = peripheral.call(name, "getItemMeta", slot)
+      local meta
+      local chest_nbtHash
       local chestCount
-      local chest_nbtHash = ""
-      if not meta then
-        chestCount = 0
+      if not doQuick then
+        meta = peripheral.call(name, "getItemMeta", slot)
+        chest_nbtHash = ""
+        if not meta then
+          chestCount = 0
+        else
+          chestCount = meta.count
+          if meta.nbtHash then
+            chest_nbtHash = meta.nbtHash
+          end
+        end
       else
-        chestCount = meta.count
-        if meta.nbtHash then
-          chest_nbtHash = meta.nbtHash
+        meta = quickList[slot]
+        if meta == nil then
+          chestCount = 0
+        else
+          chestCount = meta.count
         end
       end
       local needsFix = false
@@ -81,7 +106,7 @@ main = function()
         print(name .. " count mismatch! " .. dbCount .. " vs " .. chestCount)
         needsFix = true
       elseif chestCount ~= 0 then
-        if not (meta.name == item_name and meta.damage == item_damage and chest_nbtHash == item_nbtHash) then
+        if not (meta.name == item_name and meta.damage == item_damage and (doQuick or chest_nbtHash == item_nbtHash)) then
           local ms
           ms = function(s)
             if not s then
@@ -95,6 +120,9 @@ main = function()
         end
       end
       if needsFix and tArgs[1] == "fix" then
+        if doQuick then
+          meta = peripheral.call(name, "getItemMeta", slot)
+        end
         if meta then
           local res = db:query("insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id", {
             ty = "text",
@@ -165,5 +193,6 @@ main = function()
       end
     end
   end
+  return db:query("commit")
 end
 return parallel.waitForAny(process, main)

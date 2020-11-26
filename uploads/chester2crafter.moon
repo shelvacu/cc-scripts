@@ -1,6 +1,7 @@
 -- must run in a crafty turtle connected to chest grid
 -- turtle does not need fuel
--- turtle must have inventory introspection module and crafting table equippedpp
+-- turtle must have inventory introspection module and crafting table equipped
+require("paranoidLogger")("chester2crafter")
 dblib = require("db")
 db = dblib\default!
 common = require "chestercommon"
@@ -170,7 +171,7 @@ main = ->
         used_input_reservations = {}
         for i=1,9
             print("doing slot "..i.." which has "..textutils.serialise(slots[i]))
-            sleep(1)
+            --sleep(1)
             continue if slots[i] == nil
             item_id = slots[i]
             this_item_reservations = input_reservations[item_id]
@@ -209,6 +210,7 @@ main = ->
         --After a billion years of preparation, we're finally ready
         --DO. THE. CRAFT
         res = turtle.craft()
+        sleep(1)
         if not res
             db\query("rollback")
             error("Failed to craft. Rescan needed")
@@ -229,11 +231,14 @@ main = ->
             while turtle.getItemCount(i) > 0
                 reservation = this_item_reservations[#this_item_reservations]
                 c = peripheral.wrap(reservation.chest_name)
+                print("transferring to "..reservation.chest_name..":"..reservation.slot.." which has "..reservation.count)
                 transferred = c.pullItems(myName, i, stackSize - reservation.count, reservation.slot)
+                if transferred == 0
+                    error("err, transferred ZERO. Rescan needed at least on "..reservation.chest_name..":"..reservation.slot)
                 reservation.count += transferred
                 if reservation.count == stackSize
                     used_output_reservations[#used_output_reservations+1] = reservation
-                    this_item_reservations[#this_item_reservations] = nil
+                    table.remove(this_item_reservations, #this_item_reservations)
         for _,res in ipairs(used_input_reservations)
             if res.count == 0
                 db\query(

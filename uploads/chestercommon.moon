@@ -1,3 +1,4 @@
+dblib = require("db")
 mp = require "mp"
 
 return {
@@ -6,6 +7,7 @@ return {
   ends_with: (str, ending) ->
     ending == "" or str\sub(-#ending) == ending
   insertOrGetId: (db, meta) ->
+    paraLog.log("insertOrGetId", db, meta)
     if meta == nil
       return nil
     -- still not good, doesn't handle nested data
@@ -44,4 +46,10 @@ return {
         error"expected 1 result"
       item_id = res[1][1].val
     return item_id
+  with_db: (func) ->
+    idb = dblib\default!
+    return -> parallel.waitForAny(
+      (-> idb\process!)
+      (-> func(idb))
+    )
 }

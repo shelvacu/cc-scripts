@@ -1,5 +1,5 @@
-export os, turtle, pocket, peripheral, term, multishell
-print "make connection"
+export os, turtle, pocket, peripheral, term, multishell, paraLog
+require("paranoidLogger")("chester2")
 dblib = require("db")
 --odb = dblib\default!
 mp = require "mp"

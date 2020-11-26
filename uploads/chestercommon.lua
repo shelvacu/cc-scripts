@@ -1,3 +1,4 @@
+local dblib = require("db")
 local mp = require("mp")
 return {
   starts_with = function(str, start)
@@ -7,6 +8,7 @@ return {
     return ending == "" or str:sub(-#ending) == ending
   end,
   insertOrGetId = function(db, meta)
+    paraLog.log("insertOrGetId", db, meta)
     if meta == nil then
       return nil
     end
@@ -63,5 +65,15 @@ return {
       item_id = res[1][1].val
     end
     return item_id
+  end,
+  with_db = function(func)
+    local idb = dblib:default()
+    return function()
+      return parallel.waitForAny((function()
+        return idb:process()
+      end), (function()
+        return func(idb)
+      end))
+    end
   end
 }

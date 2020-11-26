@@ -1,4 +1,4 @@
-print("make connection")
+require("paranoidLogger")("chester2")
 local dblib = require("db")
 local mp = require("mp")
 local common = require("chestercommon")
