@@ -3,6 +3,9 @@ common = require("chestercommon")
 
 my_id = 55
 
+clamp = (num, low, high) ->
+  math.min(math.max(num, low), high)
+
 job_output_thread = (db) ->
   paraLog.log("job output running")
   sleeptime = 0
@@ -57,7 +60,7 @@ job_output_thread = (db) ->
 
     --source_chest = peripheral.wrap(stack_chest_name)
     --transferred = source_chest.pushItems(out_chest_name, stack_slot, quantity)
-    transferred = paraLog.loggedCall(stack_chest_name, "pushItems", out_chest_name, stack_slot, quantity)
+    transferred = paraLog.loggedCall("vehuiwqaolfew", stack_chest_name, "pushItems", out_chest_name, stack_slot, quantity)
 
     if transferred == 0 and quantity != 0
       paraLog.log("0 transferred, what?")

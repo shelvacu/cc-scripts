@@ -615,6 +615,8 @@ async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
 async function submitJobs(jobs: OrderedMap<number, JobNodeProps&{loading: false}>, out: string|null){
   console.log("out is", out);
   await db.sqlQuery("START TRANSACTION",[]);
+  //await db.sqlQuery("lock job",[]);
+  await db.sqlQuery("lock job_dep_graph",[]);
   let rootNode = (await db.sqlQuery("insert into job_dep_graph (parent) VALUES (NULL) returning id", []))[0][0].val as number;
   for(let [_, job] of jobs.entries()){
     await submitJob(job, rootNode);

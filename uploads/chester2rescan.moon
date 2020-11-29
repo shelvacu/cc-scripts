@@ -97,7 +97,7 @@ main = ->
           print(name .. " meta mismatch "..ms(meta.name)..":"..ms(item_name).." "..ms(meta.damage)..":"..ms(item_damage).." "..ms(meta.nbtHash)..":"..ms(item_nbtHash))
           needsFix = true
       
-      if needsFix and tArgs[1] == "fix"
+      if needsFix and doFix
         if doQuick
           meta = peripheral.call(name, "getItemMeta", slot)
         if meta

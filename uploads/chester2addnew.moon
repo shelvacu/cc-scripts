@@ -1,3 +1,6 @@
+require("paranoidLogger")("chester2addnew")
+common = require("chestercommon")
+
 db = require("db")\default!
 mp = require("mp")
 
@@ -21,6 +24,7 @@ main = ->
   --chest_map = {} --maps name to ty
   --chest_ty_map = {input: {}, output: {}, storage: {}, unknown: {}}
   for _,name in ipairs(connecteds)
+    continue unless common.starts_with(name, "minecraft:chest_")
     res = db\query(
       "select ty from chest where computer = $1 and name = $2;",
       {ty: "int4", val: my_id},
@@ -42,7 +46,7 @@ main = ->
       params = {{ty: "int4", val: my_id}, {ty: "text", val: name}}
       for i=1,size
         query_builder[i] = "($1, $2, $" .. (i+2) .. ", 0)"
-        params.val[i+2] = {ty: "int2", val: i}
+        params[i+2] = {ty: "int2", val: i}
         -- db\query(
         --   "insert into stack (chest_computer, chest_name, slot, count) VALUES ($1, $2, $3, 0)",
         --   {ty: "int4", val: my_id},

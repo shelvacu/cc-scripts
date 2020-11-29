@@ -3,6 +3,9 @@ common = require("chestercommon")
 
 my_id = 55
 
+clamp = (num, low, high) ->
+  math.min(math.max(num, low), high)
+
 job_dep_finish_thread = (db) ->
   paraLog.log("job dep finish running")
   sleeptime = 0
@@ -10,7 +13,7 @@ job_dep_finish_thread = (db) ->
     res1 = db\query(
       "update job_dep_graph j set children_finished=true from lateral (
         select n.id, coalesce(bool_and(c.finished), true) as all_finished from job_dep_graph n left join job_dep_graph c on c.parent = n.id where n.children_finished = false group by n.id
-      ) q where j.id = q.id and q.all_finished returning j.is"
+      ) q where j.id = q.id and q.all_finished returning j.id"
     )
     count1 = #res1
     res2 = db\query(

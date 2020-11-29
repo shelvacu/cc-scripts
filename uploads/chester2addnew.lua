@@ -1,3 +1,5 @@
+require("paranoidLogger")("chester2addnew")
+local common = require("chestercommon")
 local db = require("db"):default()
 local mp = require("mp")
 local wired_modem
@@ -21,51 +23,62 @@ local main
 main = function()
   local connecteds = wired_modem.getNamesRemote()
   for _, name in ipairs(connecteds) do
-    local res = db:query("select ty from chest where computer = $1 and name = $2;", {
-      ty = "int4",
-      val = my_id
-    }, {
-      ty = "text",
-      val = name
-    })
-    if #res == 0 then
-      local size = wired_modem.callRemote(name, "size")
-      print("adding " .. name)
-      db:query("start transaction")
-      db:query("insert into chest (computer, name, ty, slots) VALUES ($1, $2, $3, $4)", {
+    local _continue_0 = false
+    repeat
+      if not (common.starts_with(name, "minecraft:chest_")) then
+        _continue_0 = true
+        break
+      end
+      local res = db:query("select ty from chest where computer = $1 and name = $2;", {
         ty = "int4",
         val = my_id
       }, {
         ty = "text",
         val = name
-      }, {
-        ty = "text",
-        val = "storage"
-      }, {
-        ty = "int4",
-        val = size
       })
-      local query_prefix = "insert into stack (chest_computer, chest_name, slot, count) VALUES "
-      local query_builder = { }
-      local params = {
-        {
+      if #res == 0 then
+        local size = wired_modem.callRemote(name, "size")
+        print("adding " .. name)
+        db:query("start transaction")
+        db:query("insert into chest (computer, name, ty, slots) VALUES ($1, $2, $3, $4)", {
           ty = "int4",
           val = my_id
-        },
-        {
+        }, {
           ty = "text",
           val = name
+        }, {
+          ty = "text",
+          val = "storage"
+        }, {
+          ty = "int4",
+          val = size
+        })
+        local query_prefix = "insert into stack (chest_computer, chest_name, slot, count) VALUES "
+        local query_builder = { }
+        local params = {
+          {
+            ty = "int4",
+            val = my_id
+          },
+          {
+            ty = "text",
+            val = name
+          }
         }
-      }
-      for i = 1, size do
-        query_builder[i] = "($1, $2, $" .. (i + 2) .. ", 0)"
-        params.val[i + 2] = {
-          ty = "int2",
-          val = i
-        }
+        for i = 1, size do
+          query_builder[i] = "($1, $2, $" .. (i + 2) .. ", 0)"
+          params[i + 2] = {
+            ty = "int2",
+            val = i
+          }
+        end
+        db:query(query_prefix .. table.concat(query_builder, ","), table.unpack(params))
+        db:query("commit")
       end
-      db:query(query_prefix .. table.concat(query_builder, ","), table.unpack(params))
-      db:query("commit")
+      _continue_0 = true
+    until true
+    if not _continue_0 then
+      break
     end
   end
   return print("all chests added")

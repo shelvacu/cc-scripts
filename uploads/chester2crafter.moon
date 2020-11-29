@@ -37,12 +37,15 @@ stackSizeCache = {}
 
 getStackSize = (item_id) ->
     if stackSizeCache[item_id] != nil
-        return stackSizeCache[item_id]
+        stackSize = stackSizeCache[item_id]
+        paraLog.log("getStackSize (cache hit)", {:item_id, :stackSize})
+        return stackSize
     stackSize = db\query(
         "select fullmeta->'maxCount' from item where id=$1",
         {ty: "int4", val: item_id}
     )[1][1].val
     stackSizeCache[item_id] = stackSize
+    paraLog.log("getStackSize (cache miss)", {:item_id, :stackSize})
     return stackSize
 
 splice = (tbl, start_idx, end_idx) ->
@@ -58,6 +61,7 @@ main = ->
         )
         if #res == 0
             db\query("commit")
+            paraLog.log("no craft jobs found")
             stackSizeCache = {}
             sleep 2
             continue
@@ -65,6 +69,7 @@ main = ->
         crafting_recipe_id = row[1].val
         quantity = row[2].val
         job_id = row[3].val
+        paraLog.log("found job", {:crafting_recipe_id,:quantity,:job_id})
         res = db\query(
             "select result, result_count, slot_1, slot_2, slot_3, slot_4, slot_5, slot_6, slot_7, slot_8, slot_9, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8, out_9 from crafting_recipe where id = $1",
             {ty: "int4", val: crafting_recipe_id}
@@ -80,6 +85,7 @@ main = ->
         result_count = row[2]
         slots = splice(row,3,11)
         outs = splice(row,12,20)
+        paraLog.log("recipe data", {:result_item_id, :result_count, :slots, :outs})
         item_inputs = {}
         item_outputs = {}
         item_outputs[result_item_id] = result_count
@@ -95,8 +101,9 @@ main = ->
         for k,v in pairs(item_inputs)
             item_inputs[k] = v*quantity
         for k,v in pairs(item_outputs)
-            print(textutils.serialise(v))
-            item_outputs[k] = v*quantity*result_count
+            --print(textutils.serialise(v))
+            item_outputs[k] = v*quantity
+        paraLog.log("precalced in/out",{:item_inputs, :item_outputs})
         reserved_stack_ids = {-1}
         input_reservations = {} -- item_id => {slot, qty}[]
         for item_id, quantity in pairs(item_inputs)
@@ -125,7 +132,7 @@ main = ->
                     )
                 if #res == 0
                     db\query("rollback")
-                    error("Bad job, not enough input available.")
+                    paraLog.die("Bad job, not enough input available.")
                     return
                 row = res[1]
                 reservation = {
@@ -168,6 +175,7 @@ main = ->
                 reservations[#reservations + 1] = reservation
                 quantity_reserved += stackSize
             output_reservations[item_id] = reservations
+        paraLog.log("reservations",{:input_reservations, :output_reservations})
         used_input_reservations = {}
         for i=1,9
             print("doing slot "..i.." which has "..textutils.serialise(slots[i]))
@@ -176,24 +184,28 @@ main = ->
             item_id = slots[i]
             this_item_reservations = input_reservations[item_id]
             turtle_slot = craftingSlotToTurtleSlot[i]
-            while turtle.getItemCount(turtle_slot) < result_count
+            paraLog.log("doing input", {:i, :item_id, :this_item_reservations, :turtle_slot})
+            while turtle.getItemCount(turtle_slot) < quantity
                 reservation = this_item_reservations[#this_item_reservations]
                 if reservation.count == 0
-                    error("count is 0!!!")
-                num_to_move = math.min(reservation.count, result_count - turtle.getItemCount(turtle_slot))
+                    paraLog.die("count is 0!!!")
+                num_to_move = math.min(reservation.count, quantity - turtle.getItemCount(turtle_slot))
                 print("wrapped '"..reservation.chest_name.."'")
-                chest = peripheral.wrap(reservation.chest_name)
+                --chest = peripheral.wrap(reservation.chest_name)
                 turtleCountBefore = turtle.getItemCount(turtle_slot)
-                print(textutils.serialise{m:myName, s:reservation.slot, n:num_to_move, t:turtle_slot})
-                transferred = chest.pushItems(myName, reservation.slot, num_to_move, turtle_slot)
+                --print(textutils.serialise{m:myName, s:reservation.slot, n:num_to_move, t:turtle_slot})
+                paraLog.log("about to input items",{:myName, :reservation, :num_to_move, :turtle_slot})
+                transferred = paraLog.loggedCall("inputting item", reservation.chest_name, "pushItems", myName, reservation.slot, num_to_move, turtle_slot)
+                --transferred = chest.pushItems(myName, reservation.slot, num_to_move, turtle_slot)
                 turtleCountAfter = turtle.getItemCount(turtle_slot)
+                paraLog.log("tca",{:turtleCountBefore, :turtleCountAfter})
                 otherTransferred = turtleCountAfter - turtleCountBefore
                 if transferred ~= otherTransferred
                     print("WARN: Bad transferred value "..transferred..", actually transferred "..otherTransferred)
                     transferred = otherTransferred
                 if num_to_move ~= transferred
                     db\query("rollback")
-                    print("tcrf "..reservation.chest_name)
+                    paraLog.die("tcrf "..reservation.chest_name)
                     sleep(1000)
                     error("Turtle crafter transfer failed! Expected "..num_to_move.." items pushed, instead "..transferred.." were pushed. Item#"..item_id..", from " .. reservation.chest_name .. ":" .. reservation.slot .." to " .. myName .. ":" .. turtle_slot .. ". Rescan needed.")
                     --return
@@ -210,10 +222,11 @@ main = ->
         --After a billion years of preparation, we're finally ready
         --DO. THE. CRAFT
         res = turtle.craft()
+        paraLog.log("craft res", res)
         sleep(1)
         if not res
             db\query("rollback")
-            error("Failed to craft. Rescan needed")
+            paraLog.die("Failed to craft. Rescan needed")
             return
         used_output_reservations = {}
         for i=1,16
@@ -228,17 +241,31 @@ main = ->
                 item_id = result_item_id
             stackSize = getStackSize(item_id)
             this_item_reservations = output_reservations[item_id]
+            paraLog.log("outputtingA",{:item_id, :craftingSlot, :stackSize, :this_item_reservations})
             while turtle.getItemCount(i) > 0
                 reservation = this_item_reservations[#this_item_reservations]
-                c = peripheral.wrap(reservation.chest_name)
-                print("transferring to "..reservation.chest_name..":"..reservation.slot.." which has "..reservation.count)
-                transferred = c.pullItems(myName, i, stackSize - reservation.count, reservation.slot)
+                paraLog.log("loop iter",{:reservation})
+                --c = peripheral.wrap(reservation.chest_name)
+                --print("transferring to "..reservation.chest_name..":"..reservation.slot.." which has "..reservation.count)
+                --transferred = c.pullItems(myName, i, stackSize - reservation.count, reservation.slot)
+                transferred = paraLog.loggedCall("outputtingCall", reservation.chest_name, "pullItems", myName, i, stackSize - reservation.count, reservation.slot)
                 if transferred == 0
-                    error("err, transferred ZERO. Rescan needed at least on "..reservation.chest_name..":"..reservation.slot)
+                    paraLog.die("err, transferred ZERO. Rescan needed at least on "..reservation.chest_name..":"..reservation.slot)
                 reservation.count += transferred
+                paraLog.log("new reservation count",reservation.count)
                 if reservation.count == stackSize
+                    paraLog.log("reservation used up, removing", {:used_output_reservations, :this_item_reservations})
                     used_output_reservations[#used_output_reservations+1] = reservation
                     table.remove(this_item_reservations, #this_item_reservations)
+                    paraLog.log("reserveration removed", {:used_output_reservations, :this_item_reservations})
+        paraLog.log("all reservations should be used now", {:input_reservations, :output_reservations, :used_input_reservations, :used_output_reservations})
+        --but they might not be! so lets make them "used" so easier to iter
+        for k,v in pairs(input_reservations)
+            for _,v in ipairs(v)
+                used_input_reservations[#used_input_reservations+1] = v
+        for k,v in pairs(output_reservations)
+            for _,v in ipairs(v)
+                used_output_reservations[#used_output_reservations+1] = v
         for _,res in ipairs(used_input_reservations)
             if res.count == 0
                 db\query(
@@ -265,6 +292,7 @@ main = ->
                     {ty: "text", val: res.chest_name},
                     {ty: "int2", val: res.slot}
             )
+        paraLog.log("about to set finished and commit")
         db\query(
             "update job set finished = true where id = $1", 
             {ty: "int4", val: job_id}

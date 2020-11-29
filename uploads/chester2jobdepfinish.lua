@@ -1,12 +1,16 @@
 require("paranoidLogger")("chester2jobdepfinish")
 local common = require("chestercommon")
 local my_id = 55
+local clamp
+clamp = function(num, low, high)
+  return math.min(math.max(num, low), high)
+end
 local job_dep_finish_thread
 job_dep_finish_thread = function(db)
   paraLog.log("job dep finish running")
   local sleeptime = 0
   while true do
-    local res1 = db:query("update job_dep_graph j set children_finished=true from lateral (\n        select n.id, coalesce(bool_and(c.finished), true) as all_finished from job_dep_graph n left join job_dep_graph c on c.parent = n.id where n.children_finished = false group by n.id\n      ) q where j.id = q.id and q.all_finished returning j.is")
+    local res1 = db:query("update job_dep_graph j set children_finished=true from lateral (\n        select n.id, coalesce(bool_and(c.finished), true) as all_finished from job_dep_graph n left join job_dep_graph c on c.parent = n.id where n.children_finished = false group by n.id\n      ) q where j.id = q.id and q.all_finished returning j.id")
     local count1 = #res1
     local res2 = db:query("update job_dep_graph j set finished=true from lateral (\n        select n.id, coalesce( bool_and(c.finished), true ) as all_finished from job_dep_graph n left join job c on c.parent = n.id where n.finished = false and n.children_finished = true group by n.id\n      ) q where j.id = q.id and q.all_finished returning j.id")
     local count2 = #res2

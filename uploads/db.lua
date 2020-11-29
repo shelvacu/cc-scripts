@@ -48,9 +48,9 @@ function Connection:process()
       local parsed = mp.unpack(data)
       local message_name
       --print(#data)
-      if doDebug then
-        paraLog.log("parsed", textutils.serialise(parsed))
-      end
+      --if doDebug then
+      --  paraLog.log("parsed", textutils.serialise(parsed))
+      --end
       if parsed.ty == "error" and parsed.id == nil then
         paraLog.die("Error from server:", parsed.msg)
       end

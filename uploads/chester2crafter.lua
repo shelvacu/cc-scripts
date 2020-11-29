@@ -43,13 +43,22 @@ local stackSizeCache = { }
 local getStackSize
 getStackSize = function(item_id)
   if stackSizeCache[item_id] ~= nil then
-    return stackSizeCache[item_id]
+    local stackSize = stackSizeCache[item_id]
+    paraLog.log("getStackSize (cache hit)", {
+      item_id = item_id,
+      stackSize = stackSize
+    })
+    return stackSize
   end
   local stackSize = db:query("select fullmeta->'maxCount' from item where id=$1", {
     ty = "int4",
     val = item_id
   })[1][1].val
   stackSizeCache[item_id] = stackSize
+  paraLog.log("getStackSize (cache miss)", {
+    item_id = item_id,
+    stackSize = stackSize
+  })
   return stackSize
 end
 local splice
@@ -69,6 +78,7 @@ main = function()
       local res = db:query("select j.crafting_recipe_id, j.quantity, j.id from job j, job_dep_graph jdg where j.parent = jdg.id and jdg.finished = false and jdg.children_finished = true and j.finished = false and j.crafting_recipe_id is not null limit 1 for no key update skip locked")
       if #res == 0 then
         db:query("commit")
+        paraLog.log("no craft jobs found")
         stackSizeCache = { }
         sleep(2)
         _continue_0 = true
@@ -78,6 +88,11 @@ main = function()
       local crafting_recipe_id = row[1].val
       local quantity = row[2].val
       local job_id = row[3].val
+      paraLog.log("found job", {
+        crafting_recipe_id = crafting_recipe_id,
+        quantity = quantity,
+        job_id = job_id
+      })
       res = db:query("select result, result_count, slot_1, slot_2, slot_3, slot_4, slot_5, slot_6, slot_7, slot_8, slot_9, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8, out_9 from crafting_recipe where id = $1", {
         ty = "int4",
         val = crafting_recipe_id
@@ -95,6 +110,12 @@ main = function()
       local result_count = row[2]
       local slots = splice(row, 3, 11)
       local outs = splice(row, 12, 20)
+      paraLog.log("recipe data", {
+        result_item_id = result_item_id,
+        result_count = result_count,
+        slots = slots,
+        outs = outs
+      })
       local item_inputs = { }
       local item_outputs = { }
       item_outputs[result_item_id] = result_count
@@ -116,9 +137,12 @@ main = function()
         item_inputs[k] = v * quantity
       end
       for k, v in pairs(item_outputs) do
-        print(textutils.serialise(v))
-        item_outputs[k] = v * quantity * result_count
+        item_outputs[k] = v * quantity
       end
+      paraLog.log("precalced in/out", {
+        item_inputs = item_inputs,
+        item_outputs = item_outputs
+      })
       local reserved_stack_ids = {
         -1
       }
@@ -152,7 +176,7 @@ main = function()
           end
           if #res == 0 then
             db:query("rollback")
-            error("Bad job, not enough input available.")
+            paraLog.die("Bad job, not enough input available.")
             return 
           end
           row = res[1]
@@ -198,6 +222,10 @@ main = function()
         end
         output_reservations[item_id] = reservations
       end
+      paraLog.log("reservations", {
+        input_reservations = input_reservations,
+        output_reservations = output_reservations
+      })
       local used_input_reservations = { }
       for i = 1, 9 do
         local _continue_1 = false
@@ -210,23 +238,32 @@ main = function()
           local item_id = slots[i]
           local this_item_reservations = input_reservations[item_id]
           local turtle_slot = craftingSlotToTurtleSlot[i]
-          while turtle.getItemCount(turtle_slot) < result_count do
+          paraLog.log("doing input", {
+            i = i,
+            item_id = item_id,
+            this_item_reservations = this_item_reservations,
+            turtle_slot = turtle_slot
+          })
+          while turtle.getItemCount(turtle_slot) < quantity do
             local reservation = this_item_reservations[#this_item_reservations]
             if reservation.count == 0 then
-              error("count is 0!!!")
+              paraLog.die("count is 0!!!")
             end
-            local num_to_move = math.min(reservation.count, result_count - turtle.getItemCount(turtle_slot))
+            local num_to_move = math.min(reservation.count, quantity - turtle.getItemCount(turtle_slot))
             print("wrapped '" .. reservation.chest_name .. "'")
-            local chest = peripheral.wrap(reservation.chest_name)
             local turtleCountBefore = turtle.getItemCount(turtle_slot)
-            print(textutils.serialise({
-              m = myName,
-              s = reservation.slot,
-              n = num_to_move,
-              t = turtle_slot
-            }))
-            local transferred = chest.pushItems(myName, reservation.slot, num_to_move, turtle_slot)
+            paraLog.log("about to input items", {
+              myName = myName,
+              reservation = reservation,
+              num_to_move = num_to_move,
+              turtle_slot = turtle_slot
+            })
+            local transferred = paraLog.loggedCall("inputting item", reservation.chest_name, "pushItems", myName, reservation.slot, num_to_move, turtle_slot)
             local turtleCountAfter = turtle.getItemCount(turtle_slot)
+            paraLog.log("tca", {
+              turtleCountBefore = turtleCountBefore,
+              turtleCountAfter = turtleCountAfter
+            })
             local otherTransferred = turtleCountAfter - turtleCountBefore
             if transferred ~= otherTransferred then
               print("WARN: Bad transferred value " .. transferred .. ", actually transferred " .. otherTransferred)
@@ -234,7 +271,7 @@ main = function()
             end
             if num_to_move ~= transferred then
               db:query("rollback")
-              print("tcrf " .. reservation.chest_name)
+              paraLog.die("tcrf " .. reservation.chest_name)
               sleep(1000)
               error("Turtle crafter transfer failed! Expected " .. num_to_move .. " items pushed, instead " .. transferred .. " were pushed. Item#" .. item_id .. ", from " .. reservation.chest_name .. ":" .. reservation.slot .. " to " .. myName .. ":" .. turtle_slot .. ". Rescan needed.")
             end
@@ -251,10 +288,11 @@ main = function()
         end
       end
       res = turtle.craft()
+      paraLog.log("craft res", res)
       sleep(1)
       if not res then
         db:query("rollback")
-        error("Failed to craft. Rescan needed")
+        paraLog.die("Failed to craft. Rescan needed")
         return 
       end
       local used_output_reservations = { }
@@ -274,24 +312,56 @@ main = function()
           end
           local stackSize = getStackSize(item_id)
           local this_item_reservations = output_reservations[item_id]
+          paraLog.log("outputtingA", {
+            item_id = item_id,
+            craftingSlot = craftingSlot,
+            stackSize = stackSize,
+            this_item_reservations = this_item_reservations
+          })
           while turtle.getItemCount(i) > 0 do
             local reservation = this_item_reservations[#this_item_reservations]
-            local c = peripheral.wrap(reservation.chest_name)
-            print("transferring to " .. reservation.chest_name .. ":" .. reservation.slot .. " which has " .. reservation.count)
-            local transferred = c.pullItems(myName, i, stackSize - reservation.count, reservation.slot)
+            paraLog.log("loop iter", {
+              reservation = reservation
+            })
+            local transferred = paraLog.loggedCall("outputtingCall", reservation.chest_name, "pullItems", myName, i, stackSize - reservation.count, reservation.slot)
             if transferred == 0 then
-              error("err, transferred ZERO. Rescan needed at least on " .. reservation.chest_name .. ":" .. reservation.slot)
+              paraLog.die("err, transferred ZERO. Rescan needed at least on " .. reservation.chest_name .. ":" .. reservation.slot)
             end
             reservation.count = reservation.count + transferred
+            paraLog.log("new reservation count", reservation.count)
             if reservation.count == stackSize then
+              paraLog.log("reservation used up, removing", {
+                used_output_reservations = used_output_reservations,
+                this_item_reservations = this_item_reservations
+              })
               used_output_reservations[#used_output_reservations + 1] = reservation
               table.remove(this_item_reservations, #this_item_reservations)
+              paraLog.log("reserveration removed", {
+                used_output_reservations = used_output_reservations,
+                this_item_reservations = this_item_reservations
+              })
             end
           end
           _continue_1 = true
         until true
         if not _continue_1 then
           break
+        end
+      end
+      paraLog.log("all reservations should be used now", {
+        input_reservations = input_reservations,
+        output_reservations = output_reservations,
+        used_input_reservations = used_input_reservations,
+        used_output_reservations = used_output_reservations
+      })
+      for k, v in pairs(input_reservations) do
+        for _, v in ipairs(v) do
+          used_input_reservations[#used_input_reservations + 1] = v
+        end
+      end
+      for k, v in pairs(output_reservations) do
+        for _, v in ipairs(v) do
+          used_output_reservations[#used_output_reservations + 1] = v
         end
       end
       for _, res in ipairs(used_input_reservations) do
@@ -351,6 +421,7 @@ main = function()
           break
         end
       end
+      paraLog.log("about to set finished and commit")
       db:query("update job set finished = true where id = $1", {
         ty = "int4",
         val = job_id

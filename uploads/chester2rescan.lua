@@ -119,7 +119,7 @@ main = function()
           needsFix = true
         end
       end
-      if needsFix and tArgs[1] == "fix" then
+      if needsFix and doFix then
         if doQuick then
           meta = peripheral.call(name, "getItemMeta", slot)
         end

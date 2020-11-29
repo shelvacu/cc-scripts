@@ -1,6 +1,10 @@
 require("paranoidLogger")("chester2joboutput")
 local common = require("chestercommon")
 local my_id = 55
+local clamp
+clamp = function(num, low, high)
+  return math.min(math.max(num, low), high)
+end
 local job_output_thread
 job_output_thread = function(db)
   paraLog.log("job output running")
@@ -68,7 +72,7 @@ job_output_thread = function(db)
         stack_slot = stack_slot,
         stack_count = stack_count
       })
-      local transferred = paraLog.loggedCall(stack_chest_name, "pushItems", out_chest_name, stack_slot, quantity)
+      local transferred = paraLog.loggedCall("vehuiwqaolfew", stack_chest_name, "pushItems", out_chest_name, stack_slot, quantity)
       if transferred == 0 and quantity ~= 0 then
         paraLog.log("0 transferred, what?")
         db:query("commit")
