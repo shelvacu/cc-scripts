@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>RC</title>
+        <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+        <script crossorigin src="https://unpkg.com/@msgpack/msgpack@1.12.2/dist.es5/msgpack.min.js"></script>
+    </head>
+    <body>
+        <pre>  W/S: Forward/Back
+  A/D: Turn left/right
+  Q/E: Up/Down
+R/F/V: Dig   Up/Forward/Down
+T/G/B: Place Up/Forward/Down</pre>
+        <input id="channel" type="text" />
+        <div tabindex=0 id="focusdiv">Click in here to start controlling</div>
+        <div>Status: <span id="statusdeets"></span></div>
+        <div id="log"></div>
+        <script src="rc.js" type="module"></script>
+    </body>
+</html>

@@ -1,9 +1,10 @@
 import React, { isValidElement } from 'react';
-import { OrderedMap, List } from 'immutable';
+import { OrderedMap, List, Set } from 'immutable';
 import * as blockdata from './blockdata';
 import enchantmentData from './enchantmentData';
 import * as db from './database';
 import cloneDeep from 'lodash/cloneDeep';
+import { fsync } from 'fs';
 
 type HasInvQty = {invQty: number};
 
@@ -76,7 +77,12 @@ function StackCount(props:{
   );
 }
 
-class ScrollableNumberInput extends React.Component<{value: number, onChange: (newValue: number) => any, passThru?: object}, {}> {
+class ScrollableNumberInput extends React.Component<{
+  value: number,
+  onChange: (newValue: number) => any,
+  disabled?: boolean,
+  passThru?: object
+}, {}> {
   numValue() {
     if (this.props.value) {
       return this.props.value;
@@ -98,7 +104,14 @@ class ScrollableNumberInput extends React.Component<{value: number, onChange: (n
     this.props.onChange( val === "" ? 0 : parseInt(val) );
   }
   render() {
-    return <input type="number" value={this.props.value} onScroll={this.scroll} onChange={this.onChange} {...(this.props.passThru || {})} />
+    return <input 
+      type="number"
+      value={this.props.value}
+      onScroll={this.scroll}
+      onChange={this.onChange}
+      disabled={this.props.disabled}
+      {...(this.props.passThru || {})}
+      />
   }
 }
 
@@ -158,7 +171,13 @@ type JobNodeProps =
     {topLevel: boolean}
   ) & ({
     loading: false,
-    fromInvQty: number, //the number of items to pull from inventory, rather than crafting them.
+    invAvailQty: number, //not directly editable by user, total quantity minus any quantity used above
+
+    // One of these is editable, the other is calculated from it. Which is which depends on qtyPinMode
+    invKeepQty: number,
+    invUseQty: number,
+    qtyPinMode: "keep"|"use",
+  
     recipes: RecipeProps[],
     selectedRecipe: number|null
     //children: [number, JobNodeProps][]
@@ -248,14 +267,22 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
           </React.Fragment>)}
         </label>)}</>
       }
-      let craftCount = this.props.itemProps.count - this.props.fromInvQty;
+      let craftCount = this.props.itemProps.count - this.props.invUseQty;
       craftInfo = <>
         <div className="job-craft-split">
+          Of {this.props.itemProps.invQty}{this.props.itemProps.invQty == this.props.invAvailQty ? "" : ` (${this.props.invAvailQty} available)`}, use
           <ScrollableNumberInput
-            value={this.props.fromInvQty}
+            disabled={this.props.qtyPinMode != "use"}
+            value={this.props.invUseQty}
             onChange={this.handleFromInvQtyChange}
-            passThru={{className: "from-inv-input"}} />
-          from inventory, {craftCount} from crafting.
+            passThru={{className: "inv-use-input"}} />
+          and keep
+          <ScrollableNumberInput
+            disabled={this.props.qtyPinMode != "keep"}
+            value={this.props.invKeepQty}
+            onChange={this.handleFromInvQtyChange}
+            passThru={{className: "inv-keep-input"}} />
+          from inventory, crafting {craftCount}.
         </div>
         <form className="job-recipe-select">
           {recipeSelect}
@@ -434,6 +461,8 @@ function searchSql(query:string):Promise<(Item&HasInvQty)[]> {
         }
         where_clause += `and item.fullMeta->'enchantments' @> $${param_idx += 1} `;
         sql_params.push({ty: "jsonb", val: [search_json]});
+      }else if ((match = /^c$/i.exec(param)) !== null) {
+        where_clause += `and exists (select * from crafting_recipe where result = item.id)) `
       }else{
         //ignore
       }
@@ -449,6 +478,7 @@ function searchSql(query:string):Promise<(Item&HasInvQty)[]> {
       sql_params.push({ty: "text", val: "%" + q + "%"});
     }
   }
+  where_clause += `and (coalesce(count.count,0) > 0 or exists (select * from crafting_recipe where result = item.id)) `
   let sql = "select item.id, item.fullMeta, item.damage, coalesce(count.count,0) as count from item left join (select item_id, sum(count) as count from stack group by item_id) count on count.item_id = item.id where true " + where_clause + "order by id limit 100";
 
   return db.sqlQuery(sql, sql_params).then((res:db.SqlValue[][]) => {
@@ -471,15 +501,19 @@ type AppState = {
 
 let searchNAlloc = 1;
 
-function grabJobNodeRecipes(
-  itemId:number
+async function grabJobNodeRecipes(
+  itemId:number,
+  ancestorItems:Set<number> = Set(),
 ):Promise<{
   loading: false,
-  fromInvQty: number,
+  invKeepQty: number,
+  invAvailQty: number,
+  invUseQty: number,
+  qtyPinMode: "keep",
   recipes: RecipeProps[],
-  selectedRecipe: null
+  selectedRecipe: number|null
 }> {
-  return db.sqlQuery(
+  let res = await db.sqlQuery(
     "select id,result,result_count,"+ //idx 0,1,2
     "slot_1,"+ //idx 3
     "slot_2,"+
@@ -501,80 +535,63 @@ function grabJobNodeRecipes(
     "out_9 "+ //idx 20
     "from crafting_recipe where result = $1",
     [{ty:"int4", val: itemId}]
-  ).then((res) => {
-    let recipes:RecipeProps[] = res.map((row) => {
-      let id = row[0].val as number;
-      let result_id = row[1].val as number;
-      let result_count = row[2].val as number;
-      let slot_ids = row.slice(3, 12).map((sqlVal) => sqlVal.val as number|null);
-      let out_ids = row.slice(12, 21).map((sqlVal) => sqlVal.val as number|null);
+  );
+  let recipes:RecipeProps[] = await Promise.all(res.filter(row => !ancestorItems.has(row[0].val as number)).map(async (row) => {
+    let id = row[0].val as number;
+    let result_id = row[1].val as number;
+    let result_count = row[2].val as number;
+    let slot_ids = row.slice(3, 12).map((sqlVal) => sqlVal.val as number|null);
+    let out_ids = row.slice(12, 21).map((sqlVal) => sqlVal.val as number|null);
 
-      let ids = [result_id];
-      for(let id of slot_ids){
-        if(id != null) ids.push(id);
-      }
-      for(let id of out_ids){
-        if(id != null) ids.push(id);
-      }
-      
-      let recipe_children:{qty: number, job: JobNodeProps&{topLevel: false}}[] = [];
-      let slot_counts:Map<number, number> = new Map();
-      for(let slot_id of slot_ids.filter(s => s != null) as number[]) {
-        if(!slot_counts.has(slot_id)) {
-          slot_counts.set(slot_id, 0);
-        }
-        slot_counts.set(slot_id, slot_counts.get(slot_id) as number + 1);
-      }
-      for(let [slot_id, count] of slot_counts.entries()){
-        getItem(slot_id).then((ite) => {
-          recipe_children.push({
-            qty: count,
-            job: {
-              loading: "deferred",
-              topLevel: false as false,
-              itemProps: {...ite, count},
-              errors: []
-            }
-          });
-        })
-      }
-      return {
-        ty: "crafting",
-        children: recipe_children,
-        key: id,
-        result_count
-      };
-    });
-
-    return getCount(itemId).then((invQty) => {
-      return {
-        loading: false as false,
-        fromInvQty: 1,
-        recipes,
-        selectedRecipe: null
-      }
-      // this.setState((state) => {
-      //   let oldProps = state.selected.get(item.id);
-      //   if(!oldProps) throw "blarg";
-      //   let newProps = {
-      //     ...oldProps,
-      //     loading: false as false,
-      //     fromInvQty: Math.min(oldProps.itemProps.count, invQty),
-      //     recipes,
-      //     selectedRecipe: null,
-      //     onSelectedRecipeChange: (newRecipe: number|null) => console.log(newRecipe)
-      //   };
-      //   console.log(newProps);
-      //   return {selected: state.selected.set(item.id, newProps)};
-      // });
-    })
+    let ids = [result_id];
+    for(let id of slot_ids){
+      if(id != null) ids.push(id);
+    }
+    for(let id of out_ids){
+      if(id != null) ids.push(id);
+    }
     
-  });
+    let recipe_children:{qty: number, job: JobNodeProps&{topLevel: false}}[] = [];
+    let slot_counts:Map<number, number> = new Map();
+    for(let slot_id of slot_ids.filter(s => s != null) as number[]) {
+      if(!slot_counts.has(slot_id)) {
+        slot_counts.set(slot_id, 0);
+      }
+      slot_counts.set(slot_id, slot_counts.get(slot_id) as number + 1);
+    }
+    for(let [slot_id, count] of slot_counts.entries()){
+      let ite = await getItem(slot_id);
+      recipe_children.push({
+        qty: count,
+        job: {
+          loading: "deferred",
+          topLevel: false as false,
+          itemProps: {...ite, count},
+          errors: []
+        }
+      });
+    }
+    return {
+      ty: "crafting" as "crafting",
+      children: recipe_children,
+      key: id,
+      result_count
+    };
+  }));
+  return {
+    loading: false as false,
+    invKeepQty: 1,
+    qtyPinMode: "keep" as "keep",
+    invUseQty: 0,
+    invAvailQty: 0,
+    recipes,
+    selectedRecipe: recipes.length > 0 ? 0 : null
+  }
 }
 
 async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
   let job_dep_id = (await db.sqlQuery("insert into job_dep_graph (parent) values ($1) returning id", [{ty: "int4", val: parent}]))[0][0].val as number;
-  let fromCraftQty = job.itemProps.count - job.fromInvQty;
+  let fromCraftQty = job.itemProps.count - job.invUseQty;
   console.log("fromCraftQty", fromCraftQty);
   if(job.selectedRecipe == null) return;
   let recipe = job.recipes[job.selectedRecipe as number];
@@ -654,6 +671,16 @@ async function submitJobs(jobs: OrderedMap<number, JobNodeProps&{loading: false}
   await db.sqlQuery("COMMIT",[]);
 }
 
+type InventoryThing = Map<number,number>;
+
+async function getQty(it:InventoryThing, itemId:number):Promise<number>{
+  if(it.has(itemId)){
+    return it.get(itemId)!;
+  }else{
+    return (await getItem(itemId)).invQty;
+  }
+}
+
 class App extends React.Component<{},AppState> {
   state:AppState = {
     searchResults: [],
@@ -667,42 +694,47 @@ class App extends React.Component<{},AppState> {
     submitJobs(this.state.selected as OrderedMap<number, JobNodeProps&{loading: false}>, this.state.selectedChest);
     this.setState({selected: OrderedMap()})
   }
-  jobNodeAddValidation<T extends boolean>(
+  async recomputeThings<T extends boolean>(
     path: JobPath,
-    job: (JobNodeProps&{topLevel: T}),
-    newCount?: number
-  ): (JobNodeProps&{topLevel: T}) {
+    ancestorItems: Set<number>,
+    origJob: JobNodeProps&{topLevel: T},
+    inventoryThing: InventoryThing
+  ):Promise<JobNodeProps&{topLevel: T}> {
+    let job = cloneDeep(origJob);
     let errors:string[] = [];
+    let fam = ancestorItems.add(job.itemProps.id);
     if(job.loading === false){
-      if(newCount != null){
-        let oldCount = job.itemProps.count;
-        job.itemProps.count = newCount;
-        job.fromInvQty = Math.min(job.itemProps.invQty, newCount);
+      job.invAvailQty = await getQty(inventoryThing, job.itemProps.id)!;
+      let actualKeepQty;
+      let actualUseQty;
+      if(job.qtyPinMode == "keep")
+      {
+        actualKeepQty = Math.min(job.invKeepQty, job.invAvailQty);
+        actualUseQty = Math.min(job.invAvailQty - actualKeepQty, job.itemProps.count);
+        job.invUseQty = actualUseQty;
       }
-      if(job.topLevel){
-        if(job.itemProps.count < job.fromInvQty){
-          errors.push("Grabbing more from inventory than is needed.")
-        }
-        if(job.itemProps.count <= 0){
-          errors.push("count must be positive.")
-        }
+      else
+      {
+        actualUseQty = Math.min(job.invUseQty, job.invAvailQty, job.itemProps.count);
+        actualKeepQty = job.invAvailQty - actualUseQty;
+        job.invKeepQty = actualKeepQty;
       }
-      if(job.fromInvQty < 0){
-        errors.push("'from inventory' quantity must be positive or 0.");
-      }
-      if(job.fromInvQty > job.itemProps.invQty){
-        errors.push("Trying to grab more from inventory then is available.");
-      }
-      if(job.itemProps.count > job.fromInvQty && job.selectedRecipe == null){
+      inventoryThing.set(job.itemProps.id, job.invAvailQty - actualUseQty);
+      if(job.invUseQty < 0 ) errors.push("Use qty must be nonnegative");
+      if(job.invKeepQty < 0) errors.push("Keep qty must be nonnegative");
+      let craftQty = job.itemProps.count - actualUseQty;
+      if(craftQty > 0 && job.selectedRecipe == null){
         errors.push("Set to craft, but no recipe selected.")
       }
       if(job.selectedRecipe != null){
         let rec = job.recipes[job.selectedRecipe];
         for(let [idx,child] of rec.children.entries()){
-          let newJob = this.jobNodeAddValidation(
+          child.job.itemProps.count = child.qty * Math.ceil(craftQty/rec.result_count);
+          let newJob = await this.recomputeThings(
             path.push([job.selectedRecipe, idx]),
+            fam,
             child.job,
-            /*newCount == null ? undefined : */child.qty * Math.ceil((job.itemProps.count-job.fromInvQty)/rec.result_count)
+            inventoryThing
           );
           if(newJob.errors.length > 0){
             errors.push("Child job has errors.");
@@ -712,47 +744,165 @@ class App extends React.Component<{},AppState> {
       }
     }else{
       let id = job.itemProps.id;
-      grabJobNodeRecipes(id).then((props) => {
+      grabJobNodeRecipes(id, ancestorItems).then((props) => {
         this.updateJob(path, (j) => {
-          return this.jobNodeAddValidation(path, {...j, ...props});
-        })
-        // this.setState((state) => {
-        //   let old:JobNodeProps|undefined = state.selected.get(id);
-        //   if(old == null) throw "bad";
-        //   let newUnvalidated:JobNodeProps = {...old, ...props};
-        //   let newJob = this.jobNodeAddValidation(path, newUnvalidated)
-        //   return {selected: state.selected.set(id, newJob)}
-        // })
-      })
+          //return this.recomputeThings(path, fam, {...j, ...props}, inventoryThing);
+          return {...j, ...props};
+        });
+      });
     }
-    return {
-      ...job,
-      errors
-    }
+    return job;
   }
+  // jobNodeAddValidation<T extends boolean>(
+  //   path: JobPath,
+  //   ancestors: Set<number>,
+  //   job: (JobNodeProps&{topLevel: T}),
+  //   newCount?: number
+  // ): (JobNodeProps&{topLevel: T}) {
+  //   let errors:string[] = [];
+  //   let fam = ancestors.add(job.itemProps.id);
+  //   if(job.loading === false){
+  //     if(newCount != null){
+  //       let oldCount = job.itemProps.count;
+  //       job.itemProps.count = newCount;
+  //       //job.invUseQty = Math.min(job.itemProps.invQty, newCount);
+  //     }
+  //     if(job.qtyPinMode == "keep"){
+  //       job.invUseQty = Math.min(job.invAvailQty - job.invKeepQty, job.itemProps.count);
+  //     }else if(job.qtyPinMode == "use"){
+  //       job.invKeepQty = job.invAvailQty - job.invUseQty;
+  //     }
+  //     if(job.itemProps.count < job.invUseQty){
+  //       errors.push("Grabbing more from inventory than is needed.")
+  //     }
+  //     if(job.topLevel){
+  //       if(job.itemProps.count <= 0){
+  //         errors.push("count must be positive.")
+  //       }
+  //     }
+  //     if(job.invUseQty < 0){
+  //       errors.push("'use' quantity must be positive or 0.");
+  //     }
+  //     if(job.invUseQty > job.itemProps.invQty){
+  //       errors.push("Trying to grab more from inventory then is available.");
+  //     }
+  //     if(job.itemProps.count > job.invUseQty && job.selectedRecipe == null){
+  //       errors.push("Set to craft, but no recipe selected.")
+  //     }
+  //     if(job.selectedRecipe != null){
+  //       let rec = job.recipes[job.selectedRecipe];
+  //       for(let [idx,child] of rec.children.entries()){
+  //         let newJob = this.jobNodeAddValidation(
+  //           path.push([job.selectedRecipe, idx]),
+  //           fam,
+  //           child.job,
+  //           /*newCount == null ? undefined : */child.qty * Math.ceil((job.itemProps.count-job.invUseQty)/rec.result_count)
+  //         );
+  //         if(newJob.errors.length > 0){
+  //           errors.push("Child job has errors.");
+  //         }
+  //         child.job = newJob;
+  //       }
+  //     }
+  //   }else{
+  //     let id = job.itemProps.id;
+  //     grabJobNodeRecipes(id).then((props) => {
+  //       this.updateJob(path, (j) => {
+  //         //TODO: auto-select recipe?
+  //         return this.jobNodeAddValidation(path, fam, {...j, ...props});
+  //       })
+  //       // this.setState((state) => {
+  //       //   let old:JobNodeProps|undefined = state.selected.get(id);
+  //       //   if(old == null) throw "bad";
+  //       //   let newUnvalidated:JobNodeProps = {...old, ...props};
+  //       //   let newJob = this.jobNodeAddValidation(path, newUnvalidated)
+  //       //   return {selected: state.selected.set(id, newJob)}
+  //       // })
+  //     })
+  //   }
+  //   return {
+  //     ...job,
+  //     errors
+  //   }
+  // }
   updateJob(path: JobPath, f:(j:JobNodeProps) => JobNodeProps){
-    this.setState((state) => {
-      let topId = path.first() as number;
-      let lowerPath = path.shift() as List<[number,number]>;
-      let topRef:{job: JobNodeProps} = {job: cloneDeep(state.selected.get(topId)) as JobNodeProps};
-      let job = topRef.job;
-      let ref = topRef;
-      for(let [recipeIdx, childIdx] of lowerPath){
-        ref = (job as JobNodeProps&{loading:false}).recipes[recipeIdx].children[childIdx];
-        job = ref.job;
+    let state = this.state;
+    let topId = path.first() as number;
+    let lowerPath = path.shift() as List<[number,number]>;
+    let topRef:{job: JobNodeProps} = {job: cloneDeep(state.selected.get(topId)) as JobNodeProps};
+    let job = topRef.job;
+    let ref = topRef;
+    for(let [recipeIdx, childIdx] of lowerPath){
+      ref = (job as JobNodeProps&{loading:false}).recipes[recipeIdx].children[childIdx];
+      job = ref.job;
+    }
+    //let oldCount = job.itemProps.count;
+    ref.job = f(cloneDeep(job) as JobNodeProps);
+    let inventoryThing:InventoryThing = new Map();
+    // let setOfPromises:Promise<[number, JobNodeProps]>[] = [... state.selected.entrySeq().map(async ([key, val]) => 
+    //   {let thing:[number, JobNodeProps] = [key, await this.recomputeThings(
+    //     List([key]),
+    //     Set(),
+    //     key == topId ? topRef.job : val,
+    //     inventoryThing
+    //   )];return thing}
+    // )];
+    // //let setOfThings:[number,JobNodeProps][] = await Promise.all(setOfPromises);
+    // let func = async function<T> (sop:Promise<T>[]):Promise<T[]> {
+    //   let res = [];
+    //   for(const f of sop){
+    //     res.push(await f);
+    //   }
+    //   return res;
+    // }
+    let func = async (selected:OrderedMap<number,JobNodeProps>):Promise<[number,JobNodeProps][]> => {
+      let res:[number,JobNodeProps][] = [];
+      for( const [key,val] of selected ){
+        res.push([key, await this.recomputeThings(
+          List([key]),
+          Set(),
+          key == topId ? topRef.job : val,
+          inventoryThing
+        )]);
       }
-      let oldCount = job.itemProps.count;
-      ref.job = f(cloneDeep(job) as JobNodeProps);
-      return {
-        selected: state.selected.set(
-          topId,
-          this.jobNodeAddValidation(
-            List([topId]),
-            topRef.job,
-            oldCount == job.itemProps.count ? undefined : job.itemProps.count
-          )
-        )
+      return res
+    }
+    func(this.state.selected).then(setOfThings => {
+      this.setState(state => {
+        return {selected: OrderedMap(setOfThings)}
+      })
+    })
+    // return {
+    //   selected: OrderedMap(Promise.all())
+    //   // selected: state.selected.set(
+    //   //   topId,
+    //   //   this.recomputeThings(
+    //   //     List([topId]),
+    //   //     Set(),
+    //   //     topRef.job,
+    //   //     oldCount == job.itemProps.count ? undefined : job.itemProps.count
+    //   //   )
+    //   // )
+    // }
+  }
+  recompute(){
+    let inventoryThing:InventoryThing = new Map();
+    let func = async (selected:OrderedMap<number,JobNodeProps>):Promise<[number,JobNodeProps][]> => {
+      let res:[number,JobNodeProps][] = [];
+      for( const [key,val] of selected ){
+        res.push([key, await this.recomputeThings(
+          List([key]),
+          Set(),
+          val,
+          inventoryThing
+        )]);
       }
+      return res
+    }
+    func(this.state.selected).then(setOfThings => {
+      this.setState(state => {
+        return {selected: OrderedMap(setOfThings)}
+      })
     })
   }
   componentDidMount(){
@@ -774,18 +924,14 @@ class App extends React.Component<{},AppState> {
     });
   }
   onAdd = (item: Item&HasInvQty) => {
-    this.setState((state) => {
-      let props:JobNodeProps = {
-        itemProps: {...item, count: 1},
-        topLevel: true,
-        loading: true,
-        errors: []
-      };
-      return {
-        selected: state.selected.set(item.id, this.jobNodeAddValidation(List([item.id]),props,1))
-      }
-    });
-    
+    let props:JobNodeProps = {
+      itemProps: {...item, count: 1},
+      topLevel: true,
+      loading: true,
+      errors: []
+    };
+    this.state.selected = this.state.selected.set(item.id, props);
+    this.recompute();
   }
   onRemove = (item: Item) => {
     this.setState((state) => ({selected: state.selected.delete(item.id)}));
@@ -854,6 +1000,10 @@ class App extends React.Component<{},AppState> {
               return <SelectableItem key={s.id} item={s} onAdd={this.onAdd} mode="addable" error={false}/>
             }
           })}
+          <hr/>
+          <span id="search-results-more-indicator">
+            {this.state.searchResults.length < 100 ? "That's all there is." : "Only showing first 100 results." }
+          </span>
         </div>
       </div>
     );

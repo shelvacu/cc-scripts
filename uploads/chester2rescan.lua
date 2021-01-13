@@ -124,6 +124,17 @@ main = function()
           meta = peripheral.call(name, "getItemMeta", slot)
         end
         if meta then
+          print(textutils.serialise(meta))
+          if meta.effects then
+            setmetatable(meta.effects, {
+              isSequence = true
+            })
+          end
+          if meta.enchantments then
+            setmetatable(meta.enchantments, {
+              isSequence = true
+            })
+          end
           local res = db:query("insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id", {
             ty = "text",
             val = meta.name

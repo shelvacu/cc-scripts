@@ -336,6 +336,7 @@ function turnToFace(newFacing, preferLeft)
   elseif mod == 3 then
     turnLeft()
   end
+  return true
 end
 
 StringToFacing = {

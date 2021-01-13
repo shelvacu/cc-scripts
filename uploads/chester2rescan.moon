@@ -101,6 +101,12 @@ main = ->
         if doQuick
           meta = peripheral.call(name, "getItemMeta", slot)
         if meta
+          print textutils.serialise meta
+          if meta.effects
+            --print "setting meta.effects metatable"
+            setmetatable(meta.effects, {isSequence: true})
+          if meta.enchantments
+            setmetatable(meta.enchantments, {isSequence: true})
           res = db\query(
             "insert into item (name, damage, maxDamage, rawName, nbtHash, fullMeta) values ($1, $2, $3, $4, $5, $6) on conflict (name, damage, nbtHash) do nothing returning id",
             {ty: "text", val: meta.name},
