@@ -80,6 +80,7 @@ function StackCount(props:{
 class ScrollableNumberInput extends React.Component<{
   value: number,
   onChange: (newValue: number) => any,
+  onClick?: ()=>any,
   disabled?: boolean,
   passThru?: object
 }, {}> {
@@ -88,30 +89,44 @@ class ScrollableNumberInput extends React.Component<{
       return this.props.value;
     } else {return 0};
   }
-  scroll = (ev: {detail: number}) => {
+  disabled():boolean {
+    if (this.props.disabled == null) return false;
+    return this.props.disabled;
+  }
+  scroll = (ev: {deltaY: number, preventDefault: ()=>any}) => {
+    if(this.disabled()) return;
     let newValue;
-    if (ev.detail > 0){
+    if(this.props.disabled) return;
+    if (ev.deltaY < 0){
       newValue = this.numValue() + 1;
-    }else if(ev.detail < 0){
+    }else if(ev.deltaY > 0){
       newValue = this.numValue() - 1;
     }else{
       return;
     }
+    ev.preventDefault();
     this.props.onChange(newValue);
   }
   onChange = (ev: {target: {value: string}}) => {
+    if(this.disabled()) return;
     let val = ev.target.value;
     this.props.onChange( val === "" ? 0 : parseInt(val) );
   }
   render() {
-    return <input 
-      type="number"
-      value={this.props.value}
-      onScroll={this.scroll}
-      onChange={this.onChange}
-      disabled={this.props.disabled}
-      {...(this.props.passThru || {})}
-      />
+    let passThru = (cloneDeep(this.props.passThru) || ({className: ""})) as {className: string|undefined};
+    if(passThru.className == null) passThru.className = "";
+    //if(passThru == null) passThru = {};
+    passThru.className += this.disabled() ? " inp-disabled" : "";
+    return <div onClick={this.props.onClick} style={{display:"inline-block"}}>
+      <input 
+        type="number"
+        value={this.props.value}
+        onWheelCapture={this.scroll}
+        onKeyDown={console.log}
+        onChange={this.onChange}
+        {...passThru}
+        />
+    </div>
   }
 }
 
@@ -147,7 +162,8 @@ type JobNodeFuncsLoaded = (
   {
     loading: false,
     onSelectedRecipeChange: (path: JobPath, newRecipe: number|null) => any,
-    onFromInvQtyChange: (path: JobPath, newQty: number) => any
+    onFromInvQtyChange: (path: JobPath, newQty: number) => any,
+    onPinChange: (path: JobPath, newPin: "keep"|"use") => any
   }&(
     {topLevel: false}|{
       topLevel: true,
@@ -162,7 +178,8 @@ type JobNodeFuncs =
     onSelectedRecipeChange?: (path: JobPath, newRecipe: number|null) => any,
     onFromInvQtyChange?: (path: JobPath, newQty: number) => any,
     onRemove?: (path: JobPath) => any,
-    onQtyChange?: (path: JobPath, newQty: number) => any
+    onQtyChange?: (path: JobPath, newQty: number) => any,
+    onPinChange?: (path: JobPath, newPin: "keep"|"use") => any
   }&(
   {loading: true}|{loading: "deferred"}|JobNodeFuncsLoaded);
 
@@ -176,6 +193,7 @@ type JobNodeProps =
     // One of these is editable, the other is calculated from it. Which is which depends on qtyPinMode
     invKeepQty: number,
     invUseQty: number,
+    craftQty: number,
     qtyPinMode: "keep"|"use",
   
     recipes: RecipeProps[],
@@ -221,6 +239,15 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
       throw "bad"
     }
   }
+  handlePinChange = (newPin:"keep"|"use") => {
+    if(!this.props.loading){
+      if(this.props.qtyPinMode != newPin) this.props.onPinChange(this.props.path, newPin);
+    }else{
+      throw "bad"
+    }
+  }
+  handleClickKeep = () => this.handlePinChange("keep");
+  handleClickUse = () => this.handlePinChange("use");
   render() {
     let craftInfo = <>Loading...</>;
     if(!this.props.loading){
@@ -235,7 +262,8 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
               {...child.job}
               path={this.props.path.push([selRec, idx])}
               onSelectedRecipeChange={props.onSelectedRecipeChange}
-              onFromInvQtyChange={props.onFromInvQtyChange} />
+              onFromInvQtyChange={props.onFromInvQtyChange}
+              onPinChange={props.onPinChange}/>
           </div>)}
         </>;
       }
@@ -267,7 +295,7 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
           </React.Fragment>)}
         </label>)}</>
       }
-      let craftCount = this.props.itemProps.count - this.props.invUseQty;
+      //let craftCount = this.props.itemProps.count - this.props.invUseQty;
       craftInfo = <>
         <div className="job-craft-split">
           Of {this.props.itemProps.invQty}{this.props.itemProps.invQty == this.props.invAvailQty ? "" : ` (${this.props.invAvailQty} available)`}, use
@@ -275,14 +303,16 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
             disabled={this.props.qtyPinMode != "use"}
             value={this.props.invUseQty}
             onChange={this.handleFromInvQtyChange}
+            onClick={this.handleClickUse}
             passThru={{className: "inv-use-input"}} />
           and keep
           <ScrollableNumberInput
             disabled={this.props.qtyPinMode != "keep"}
             value={this.props.invKeepQty}
             onChange={this.handleFromInvQtyChange}
+            onClick={this.handleClickKeep}
             passThru={{className: "inv-keep-input"}} />
-          from inventory, crafting {craftCount}.
+          from inventory, crafting {this.props.craftQty}.
         </div>
         <form className="job-recipe-select">
           {recipeSelect}
@@ -495,7 +525,7 @@ type AppState = {
   selected: OrderedMap<number, JobNodeProps>,
   searchText: string,
   searchN: number,
-  outputChests: string[],
+  outputChests: {name: string, nickName: string|null}[],
   selectedChest: string|null
 };
 
@@ -509,6 +539,7 @@ async function grabJobNodeRecipes(
   invKeepQty: number,
   invAvailQty: number,
   invUseQty: number,
+  craftQty: number,
   qtyPinMode: "keep",
   recipes: RecipeProps[],
   selectedRecipe: number|null
@@ -536,7 +567,10 @@ async function grabJobNodeRecipes(
     "from crafting_recipe where result = $1",
     [{ty:"int4", val: itemId}]
   );
-  let recipes:RecipeProps[] = await Promise.all(res.filter(row => !ancestorItems.has(row[0].val as number)).map(async (row) => {
+  let recipes:RecipeProps[] = await Promise.all(res.filter(row => {
+    let slot_ids = row.slice(3, 12).map((sqlVal) => sqlVal.val as number|null);
+    return slot_ids.every(id => id == null || !ancestorItems.has(id));
+  }).map(async (row) => {
     let id = row[0].val as number;
     let result_id = row[1].val as number;
     let result_count = row[2].val as number;
@@ -584,6 +618,7 @@ async function grabJobNodeRecipes(
     qtyPinMode: "keep" as "keep",
     invUseQty: 0,
     invAvailQty: 0,
+    craftQty: 0,
     recipes,
     selectedRecipe: recipes.length > 0 ? 0 : null
   }
@@ -591,17 +626,41 @@ async function grabJobNodeRecipes(
 
 async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
   let job_dep_id = (await db.sqlQuery("insert into job_dep_graph (parent) values ($1) returning id", [{ty: "int4", val: parent}]))[0][0].val as number;
-  let fromCraftQty = job.itemProps.count - job.invUseQty;
+  let actualKeepQty;
+  let actualUseQty;
+  if(job.qtyPinMode == "keep")
+  {
+    actualKeepQty = Math.min(job.invKeepQty, job.invAvailQty);
+    actualUseQty = Math.min(job.invAvailQty - actualKeepQty, job.itemProps.count);
+    //job.invUseQty = actualUseQty;
+  }
+  else
+  {
+    actualUseQty = Math.min(job.invUseQty, job.invAvailQty, job.itemProps.count);
+    actualKeepQty = job.invAvailQty - actualUseQty;
+    //job.invKeepQty = actualKeepQty;
+  }
+  let fromCraftQty = job.itemProps.count - actualUseQty;
   console.log("fromCraftQty", fromCraftQty);
   if(job.selectedRecipe == null) return;
   let recipe = job.recipes[job.selectedRecipe as number];
   let craftTimes = Math.ceil(fromCraftQty/recipe.result_count);
   console.log(craftTimes);
-  let stackSize = Math.min(...recipe.children.map(c => c.job.itemProps.maxCount));
-  console.log(stackSize);
-  let quotient = Math.floor(craftTimes/stackSize);
+
+  //The maximum we should craft in a single turtle.craft() call is this minimum of ...
+  let maxCraftCount = Math.min(
+    //The stack size of each input and
+    ...recipe.children.map(c => c.job.itemProps.maxCount),
+    //The stack size of the output times 16.
+    //If we craft more than this, the turtle can't fit the results of the craft in its inventory, and the extras spill out into the world
+    //The only cases I know of are tools and armor; where it's possible to craft 64 but with a stack size of 1 the turtle can only hold 16
+    //There may be other cases
+    job.itemProps.maxCount * 16
+  );
+  console.log(maxCraftCount);
+  let quotient = Math.floor(craftTimes/maxCraftCount);
   console.log(quotient);
-  let remainder = craftTimes%stackSize;
+  let remainder = craftTimes%maxCraftCount;
   for(let i=0;i<quotient;i++){
     await db.sqlQuery(
       "insert into job (parent, crafting_recipe_id, item_id, quantity) values ($1, $2, $3, $4)",
@@ -609,7 +668,7 @@ async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
         {ty: "int4", val: job_dep_id},
         {ty: "int4", val: recipe.key},
         {ty: "int4", val: job.itemProps.id},
-        {ty: "int4", val: stackSize}
+        {ty: "int4", val: maxCraftCount}
       ]
     )
   }
@@ -723,6 +782,7 @@ class App extends React.Component<{},AppState> {
       if(job.invUseQty < 0 ) errors.push("Use qty must be nonnegative");
       if(job.invKeepQty < 0) errors.push("Keep qty must be nonnegative");
       let craftQty = job.itemProps.count - actualUseQty;
+      job.craftQty = craftQty;
       if(craftQty > 0 && job.selectedRecipe == null){
         errors.push("Set to craft, but no recipe selected.")
       }
@@ -907,9 +967,9 @@ class App extends React.Component<{},AppState> {
   }
   componentDidMount(){
     console.log("mounting run");
-    db.sqlQuery("select name from chest where ty='output'",[]).then((res) => {
-      let oc = res.map((row) => row[0].val as string)
-      this.setState({outputChests: oc, selectedChest: oc[0] || null});
+    db.sqlQuery("select name, nickname from chest where ty='output'",[]).then((res) => {
+      let oc = res.map((row) => ({name: row[0].val as string, nickName: row[1].val as string|null}))
+      this.setState({outputChests: oc, selectedChest: oc[0]?.name || null});
     })
     this.onSearch({target: {value: "mc:stick"}});
   }
@@ -948,7 +1008,20 @@ class App extends React.Component<{},AppState> {
     this.updateJob(path, (j) => ({...j, itemProps: {...j.itemProps, count: newQty}}));
   }
   handleFromInvQtyChange = (path: JobPath, newQty: number) => {
-    this.updateJob(path, (j) => ({...j, fromInvQty: newQty}));
+    this.updateJob(path, (j) => {
+      let n;
+      if (!j.loading && j.qtyPinMode == "use"){
+        n = {invUseQty: Math.max(newQty, 0)};
+      }else{
+        n = {invKeepQty: Math.max(newQty, 0)};
+      }
+      return {...j, ...n};
+    });
+  }
+  handlePinChange = (path: JobPath, newPin: "keep"|"use") => {
+    this.updateJob(path, (j) => {
+      return {...j, qtyPinMode: newPin}
+    })
   }
   render(){
     return (
@@ -967,6 +1040,7 @@ class App extends React.Component<{},AppState> {
                 onSelectedRecipeChange={this.handleSelectedRecipeChange}
                 onRemove={this.handleRemove}
                 onQtyChange={this.handleQtyChange}
+                onPinChange={this.handlePinChange}
                 onFromInvQtyChange={this.handleFromInvQtyChange} />
             ).toArray()}
           </div>
@@ -978,12 +1052,12 @@ class App extends React.Component<{},AppState> {
               None/Keep in inventory
             </option>
             {
-              this.state.outputChests.map((cname) => 
+              this.state.outputChests.map((c) => 
                 <option
-                  key={cname}
-                  value={cname}
-                  selected={this.state.selectedChest === cname}>
-                  {cname}
+                  key={c.name}
+                  value={c.name}
+                  selected={this.state.selectedChest === c.name}>
+                  {c.nickName ? c.nickName + " - " : ""}{c.name}
                 </option>
               )
             }

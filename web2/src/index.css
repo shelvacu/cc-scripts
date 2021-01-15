@@ -28,3 +28,8 @@ code {
 .from-inv-input {
   width: 7em;
 }
+
+.inp-disabled {
+  color: GrayText;
+  /*background-color: ;*/
+}
