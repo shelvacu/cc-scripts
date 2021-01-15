@@ -967,7 +967,7 @@ class App extends React.Component<{},AppState> {
   }
   componentDidMount(){
     console.log("mounting run");
-    db.sqlQuery("select name, nickname from chest where ty='output'",[]).then((res) => {
+    db.sqlQuery("select name, nickname from chest where ty='output' order by sort nulls last",[]).then((res) => {
       let oc = res.map((row) => ({name: row[0].val as string, nickName: row[1].val as string|null}))
       this.setState({outputChests: oc, selectedChest: oc[0]?.name || null});
     })
