@@ -1,4 +1,5 @@
 import * as MessagePack from "@msgpack/msgpack";
+import Cookies from "js-cookie";
 import { setConstantValue } from "typescript";
 export type SqlValue =
   {ty: "bool", val: boolean}|
@@ -12,11 +13,24 @@ let msgs = new Map<number, [(rows:SqlValue[][])=>void,(err:string)=>void]>(); //
 let prepareds = new Map<number, [(rows:number)=>void,(err:string)=>void]>(); // msgid => [successCallback, failCallback]
 let notifyListeners = new Map<string, (data: {process_id: number, channel: string, payload: string} )=>void>(); // channel => callback
 let msgid = 0;
-let socket = new WebSocket("ws://10.244.65.57:7648/");
+//let socket = new WebSocket("ws://10.244.65.57:7648/");
+const loc = window.location;
+let new_uri;
+if (loc.protocol === "https:") {
+    new_uri = "wss:";
+} else {
+    new_uri = "ws:";
+}
+new_uri += "//" + loc.host;
+new_uri += loc.pathname + "/ws";
+
+let socket = new WebSocket(Cookies.get("ws-override") || new_uri);
 //@ts-ignore
 window.theSocket = socket;
 //@ts-ignore
-window.mp = MessagePack;
+window.mp = MessagePack;  
+//@ts-ignore
+window.Cookies = Cookies;
 let openPromise:Promise<WebSocket> = new Promise(function(success, fail) {
   let onOpen = function() {
     console.log("Websocket open!");
