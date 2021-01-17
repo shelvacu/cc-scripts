@@ -607,7 +607,7 @@ async function grabJobNodeRecipes(
   }));
   return {
     loading: false as false,
-    invKeepQty: 1,
+    invKeepQty: 0,
     qtyPinMode: "keep" as "keep",
     invUseQty: 0,
     invAvailQty: 0,
