@@ -1,10 +1,9 @@
-import React, { isValidElement } from 'react';
+import React from 'react';
 import { OrderedMap, List, Set } from 'immutable';
 import * as blockdata from './blockdata';
 import enchantmentData from './enchantmentData';
 import * as db from './database';
 import cloneDeep from 'lodash/cloneDeep';
-import { fsync } from 'fs';
 
 type HasInvQty = {invQty: number};
 
@@ -30,21 +29,15 @@ function getItem(id:number):Promise<Item&HasInvQty> {
   return new Promise(function(suc, fail) {
     if (ItemsCache.has(id)) {
       let res = ItemsCache.get(id);
-      if(res == null) throw "wtf";
+      if(res == null) throw new Error("wtf");
       suc(res);
     } else {
       preloadItemsCache([id]).then(() => {
         let res = ItemsCache.get(id);
-        if(res == null) throw "wtf";
+        if(res == null) throw new Error("wtf");
         suc(res);
       });
     }
-  });
-}
-
-function getCount(id:number):Promise<number> {
-  return db.sqlQuery("select sum(count) from stack where item_id = $1",[{ty: "int4", val: id}]).then((rows) => {
-    return rows[0][0].val as number;
   });
 }
 
@@ -215,35 +208,35 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
       let p2:JobNodeFuncsLoaded = p;
       p2.onSelectedRecipeChange(this.props.path, val);
     }else{
-      throw "bad"
+      throw new Error("bad");
     }
   }
   handleQtyChange = (_:any, newQty:number) => {
     if(this.props.topLevel && !this.props.loading){
       this.props.onQtyChange(this.props.path, newQty)
     }else{
-      throw "bad"
+      throw new Error("bad");
     }
   }
   handleRemove = () => {
     if(this.props.topLevel && !this.props.loading){
       this.props.onRemove(this.props.path)
     }else{
-      throw "bad"
+      throw new Error("bad");
     }
   }
   handleFromInvQtyChange = (newQty:number) => {
     if(!this.props.loading){
       this.props.onFromInvQtyChange(this.props.path, newQty);
     }else{
-      throw "bad"
+      throw new Error("bad");
     }
   }
   handlePinChange = (newPin:"keep"|"use") => {
     if(!this.props.loading){
-      if(this.props.qtyPinMode != newPin) this.props.onPinChange(this.props.path, newPin);
+      if(this.props.qtyPinMode !== newPin) this.props.onPinChange(this.props.path, newPin);
     }else{
-      throw "bad"
+      throw new Error("bad");
     }
   }
   handleClickKeep = () => this.handlePinChange("keep");
@@ -298,16 +291,16 @@ class JobNode extends React.Component<JobNodeProps&{path:JobPath}&JobNodeFuncs,{
       //let craftCount = this.props.itemProps.count - this.props.invUseQty;
       craftInfo = <>
         <div className="job-craft-split">
-          Of {this.props.itemProps.invQty}{this.props.itemProps.invQty == this.props.invAvailQty ? "" : ` (${this.props.invAvailQty} available)`}, use
+          Of {this.props.itemProps.invQty}{this.props.itemProps.invQty === this.props.invAvailQty ? "" : ` (${this.props.invAvailQty} available)`}, use
           <ScrollableNumberInput
-            disabled={this.props.qtyPinMode != "use"}
+            disabled={this.props.qtyPinMode !== "use"}
             value={this.props.invUseQty}
             onChange={this.handleFromInvQtyChange}
             onClick={this.handleClickUse}
             passThru={{className: "inv-use-input"}} />
           and keep
           <ScrollableNumberInput
-            disabled={this.props.qtyPinMode != "keep"}
+            disabled={this.props.qtyPinMode !== "keep"}
             value={this.props.invKeepQty}
             onChange={this.handleFromInvQtyChange}
             onClick={this.handleClickKeep}
@@ -390,7 +383,7 @@ class SelectableItem extends React.Component<SelectableItemProps, {}> {
     if(this.props.mode === "editable"){
       this.props.onQtyChange(this.props.item, newValue)
     }else{
-      throw "no"
+      throw new Error("no")
     }
   }
 
@@ -628,7 +621,7 @@ async function submitJob(job: JobNodeProps&{loading: false}, parent: number){
   let job_dep_id = (await db.sqlQuery("insert into job_dep_graph (parent) values ($1) returning id", [{ty: "int4", val: parent}]))[0][0].val as number;
   let actualKeepQty;
   let actualUseQty;
-  if(job.qtyPinMode == "keep")
+  if(job.qtyPinMode === "keep")
   {
     actualKeepQty = Math.min(job.invKeepQty, job.invAvailQty);
     actualUseQty = Math.min(job.invAvailQty - actualKeepQty, job.itemProps.count);
@@ -694,7 +687,7 @@ async function submitJobs(jobs: OrderedMap<number, JobNodeProps&{loading: false}
   //await db.sqlQuery("lock job",[]);
   await db.sqlQuery("lock job_dep_graph",[]);
   let rootNode = (await db.sqlQuery("insert into job_dep_graph (parent) VALUES (NULL) returning id", []))[0][0].val as number;
-  for(let [_, job] of jobs.entries()){
+  for(let job of jobs.values()){
     await submitJob(job, rootNode);
     if(out != null){
       let stackSize = job.itemProps.maxCount;
@@ -766,7 +759,7 @@ class App extends React.Component<{},AppState> {
       job.invAvailQty = await getQty(inventoryThing, job.itemProps.id)!;
       let actualKeepQty;
       let actualUseQty;
-      if(job.qtyPinMode == "keep")
+      if(job.qtyPinMode === "keep")
       {
         actualKeepQty = Math.min(job.invKeepQty, job.invAvailQty);
         actualUseQty = Math.min(job.invAvailQty - actualKeepQty, job.itemProps.count);
@@ -813,78 +806,6 @@ class App extends React.Component<{},AppState> {
     }
     return job;
   }
-  // jobNodeAddValidation<T extends boolean>(
-  //   path: JobPath,
-  //   ancestors: Set<number>,
-  //   job: (JobNodeProps&{topLevel: T}),
-  //   newCount?: number
-  // ): (JobNodeProps&{topLevel: T}) {
-  //   let errors:string[] = [];
-  //   let fam = ancestors.add(job.itemProps.id);
-  //   if(job.loading === false){
-  //     if(newCount != null){
-  //       let oldCount = job.itemProps.count;
-  //       job.itemProps.count = newCount;
-  //       //job.invUseQty = Math.min(job.itemProps.invQty, newCount);
-  //     }
-  //     if(job.qtyPinMode == "keep"){
-  //       job.invUseQty = Math.min(job.invAvailQty - job.invKeepQty, job.itemProps.count);
-  //     }else if(job.qtyPinMode == "use"){
-  //       job.invKeepQty = job.invAvailQty - job.invUseQty;
-  //     }
-  //     if(job.itemProps.count < job.invUseQty){
-  //       errors.push("Grabbing more from inventory than is needed.")
-  //     }
-  //     if(job.topLevel){
-  //       if(job.itemProps.count <= 0){
-  //         errors.push("count must be positive.")
-  //       }
-  //     }
-  //     if(job.invUseQty < 0){
-  //       errors.push("'use' quantity must be positive or 0.");
-  //     }
-  //     if(job.invUseQty > job.itemProps.invQty){
-  //       errors.push("Trying to grab more from inventory then is available.");
-  //     }
-  //     if(job.itemProps.count > job.invUseQty && job.selectedRecipe == null){
-  //       errors.push("Set to craft, but no recipe selected.")
-  //     }
-  //     if(job.selectedRecipe != null){
-  //       let rec = job.recipes[job.selectedRecipe];
-  //       for(let [idx,child] of rec.children.entries()){
-  //         let newJob = this.jobNodeAddValidation(
-  //           path.push([job.selectedRecipe, idx]),
-  //           fam,
-  //           child.job,
-  //           /*newCount == null ? undefined : */child.qty * Math.ceil((job.itemProps.count-job.invUseQty)/rec.result_count)
-  //         );
-  //         if(newJob.errors.length > 0){
-  //           errors.push("Child job has errors.");
-  //         }
-  //         child.job = newJob;
-  //       }
-  //     }
-  //   }else{
-  //     let id = job.itemProps.id;
-  //     grabJobNodeRecipes(id).then((props) => {
-  //       this.updateJob(path, (j) => {
-  //         //TODO: auto-select recipe?
-  //         return this.jobNodeAddValidation(path, fam, {...j, ...props});
-  //       })
-  //       // this.setState((state) => {
-  //       //   let old:JobNodeProps|undefined = state.selected.get(id);
-  //       //   if(old == null) throw "bad";
-  //       //   let newUnvalidated:JobNodeProps = {...old, ...props};
-  //       //   let newJob = this.jobNodeAddValidation(path, newUnvalidated)
-  //       //   return {selected: state.selected.set(id, newJob)}
-  //       // })
-  //     })
-  //   }
-  //   return {
-  //     ...job,
-  //     errors
-  //   }
-  // }
   updateJob(path: JobPath, f:(j:JobNodeProps) => JobNodeProps){
     let state = this.state;
     let topId = path.first() as number;
@@ -896,32 +817,15 @@ class App extends React.Component<{},AppState> {
       ref = (job as JobNodeProps&{loading:false}).recipes[recipeIdx].children[childIdx];
       job = ref.job;
     }
-    //let oldCount = job.itemProps.count;
     ref.job = f(cloneDeep(job) as JobNodeProps);
     let inventoryThing:InventoryThing = new Map();
-    // let setOfPromises:Promise<[number, JobNodeProps]>[] = [... state.selected.entrySeq().map(async ([key, val]) => 
-    //   {let thing:[number, JobNodeProps] = [key, await this.recomputeThings(
-    //     List([key]),
-    //     Set(),
-    //     key == topId ? topRef.job : val,
-    //     inventoryThing
-    //   )];return thing}
-    // )];
-    // //let setOfThings:[number,JobNodeProps][] = await Promise.all(setOfPromises);
-    // let func = async function<T> (sop:Promise<T>[]):Promise<T[]> {
-    //   let res = [];
-    //   for(const f of sop){
-    //     res.push(await f);
-    //   }
-    //   return res;
-    // }
     let func = async (selected:OrderedMap<number,JobNodeProps>):Promise<[number,JobNodeProps][]> => {
       let res:[number,JobNodeProps][] = [];
       for( const [key,val] of selected ){
         res.push([key, await this.recomputeThings(
           List([key]),
           Set(),
-          key == topId ? topRef.job : val,
+          key === topId ? topRef.job : val,
           inventoryThing
         )]);
       }
@@ -931,21 +835,9 @@ class App extends React.Component<{},AppState> {
       this.setState(state => {
         return {selected: OrderedMap(setOfThings)}
       })
-    })
-    // return {
-    //   selected: OrderedMap(Promise.all())
-    //   // selected: state.selected.set(
-    //   //   topId,
-    //   //   this.recomputeThings(
-    //   //     List([topId]),
-    //   //     Set(),
-    //   //     topRef.job,
-    //   //     oldCount == job.itemProps.count ? undefined : job.itemProps.count
-    //   //   )
-    //   // )
-    // }
+    });
   }
-  recompute(){
+  recompute(newId:number,newProps:JobNodeProps){
     let inventoryThing:InventoryThing = new Map();
     let func = async (selected:OrderedMap<number,JobNodeProps>):Promise<[number,JobNodeProps][]> => {
       let res:[number,JobNodeProps][] = [];
@@ -957,6 +849,12 @@ class App extends React.Component<{},AppState> {
           inventoryThing
         )]);
       }
+      res.push([newId, await this.recomputeThings(
+        List([newId]),
+        Set(),
+        newProps,
+        inventoryThing
+      )]);
       return res
     }
     func(this.state.selected).then(setOfThings => {
@@ -990,8 +888,8 @@ class App extends React.Component<{},AppState> {
       loading: true,
       errors: []
     };
-    this.state.selected = this.state.selected.set(item.id, props);
-    this.recompute();
+    //this.state.selected = this.state.selected.set(item.id, props);
+    this.recompute(item.id, props);
   }
   onRemove = (item: Item) => {
     this.setState((state) => ({selected: state.selected.delete(item.id)}));
@@ -1010,7 +908,7 @@ class App extends React.Component<{},AppState> {
   handleFromInvQtyChange = (path: JobPath, newQty: number) => {
     this.updateJob(path, (j) => {
       let n;
-      if (!j.loading && j.qtyPinMode == "use"){
+      if (!j.loading && j.qtyPinMode === "use"){
         n = {invUseQty: Math.max(newQty, 0)};
       }else{
         n = {invKeepQty: Math.max(newQty, 0)};

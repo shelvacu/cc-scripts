@@ -1,6 +1,5 @@
 import * as MessagePack from "@msgpack/msgpack";
 import Cookies from "js-cookie";
-import { setConstantValue } from "typescript";
 export type SqlValue =
   {ty: "bool", val: boolean}|
   {ty: "char"|"int"|"smallint"|"tinyint"|"oid"|"bigint"|"real"|"double"|"int4", val: number}|
@@ -58,7 +57,7 @@ socket.onmessage = function(msgEv) {
       let msgCallbacks;
       if((msgCallbacks = msgs.get(parsed.msgid))){
         let cb = msgCallbacks[0];
-        let rows = (parsed.rows.map((row) => row.map((sval) => sval.ty == "null" ? {ty: "null", val: null} as SqlValue : sval)));
+        let rows = (parsed.rows.map((row) => row.map((sval) => sval.ty === "null" ? {ty: "null", val: null} as SqlValue : sval)));
         cb(rows);
       }
       msgs.delete(parsed.msgid)
@@ -93,7 +92,7 @@ socket.onmessage = function(msgEv) {
   });
 }
 
-export function sqlQuery(str:string, params:SqlValue[]):Promise<SqlValue[][]> {
+export function sqlQuery(str:string, params?:SqlValue[]):Promise<SqlValue[][]> {
   if(!params) {
     params = [];
   }
@@ -103,3 +102,8 @@ export function sqlQuery(str:string, params:SqlValue[]):Promise<SqlValue[][]> {
   return openPromise.then(ws => ws.send(data))
     .then(_ => new Promise((success, fail) => msgs.set(myMsgid, [success, fail])));
 }
+
+function ping() {
+  sqlQuery("select 1;").then(_ => setTimeout(ping,10000));
+}
+ping();
