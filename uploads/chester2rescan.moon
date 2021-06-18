@@ -11,7 +11,7 @@ for _,mod in ipairs {peripheral.find "modem"}
 if not wired_modem
   error"Could not find any wired modem"
 
-my_id = os.getComputerID!
+my_id = 55
 
 tArgs = {...}
 
@@ -51,9 +51,7 @@ main = ->
       {ty: "text", val: name}
     )
     --print("has "..#stacks.." stacks")
-    local quickList
-    if doQuick
-      quickList = peripheral.call(name, "list")
+    quickList = peripheral.call(name, "list")
     for _,row in ipairs stacks
       if chest_ty ~= 'storage' -- and has more than 0 stacks
         print(name .. " is ty " .. chest_ty .. " but has stacks associated!")
@@ -67,7 +65,11 @@ main = ->
       local meta
       local chest_nbtHash
       local chestCount
-      if not doQuick
+      meta = quickList[slot]
+      if meta == nil
+        chestCount = 0
+        chest_nbtHash = ""
+      elseif not doQuick
         meta = peripheral.call(name, "getItemMeta", slot)
         chest_nbtHash = ""
         if not meta
@@ -77,11 +79,7 @@ main = ->
           if meta.nbtHash
             chest_nbtHash = meta.nbtHash
       else
-        meta = quickList[slot]
-        if meta == nil
-          chestCount = 0
-        else
-          chestCount = meta.count
+        chestCount = meta.count
 
       needsFix = false
       if dbCount != chestCount

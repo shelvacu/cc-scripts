@@ -12,7 +12,7 @@ end
 if not wired_modem then
   error("Could not find any wired modem")
 end
-local my_id = os.getComputerID()
+local my_id = 55
 local tArgs = {
   ...
 }
@@ -65,10 +65,7 @@ main = function()
       ty = "text",
       val = name
     })
-    local quickList
-    if doQuick then
-      quickList = peripheral.call(name, "list")
-    end
+    local quickList = peripheral.call(name, "list")
     for _, row in ipairs(stacks) do
       if chest_ty ~= 'storage' then
         print(name .. " is ty " .. chest_ty .. " but has stacks associated!")
@@ -82,7 +79,11 @@ main = function()
       local meta
       local chest_nbtHash
       local chestCount
-      if not doQuick then
+      meta = quickList[slot]
+      if meta == nil then
+        chestCount = 0
+        chest_nbtHash = ""
+      elseif not doQuick then
         meta = peripheral.call(name, "getItemMeta", slot)
         chest_nbtHash = ""
         if not meta then
@@ -94,12 +95,7 @@ main = function()
           end
         end
       else
-        meta = quickList[slot]
-        if meta == nil then
-          chestCount = 0
-        else
-          chestCount = meta.count
-        end
+        chestCount = meta.count
       end
       local needsFix = false
       if dbCount ~= chestCount then
