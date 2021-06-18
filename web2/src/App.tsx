@@ -11,7 +11,7 @@ const ItemsCache = new Map<number,Item&HasInvQty>();
 
 function preloadItemsCache(ids: number[]):Promise<void> {
   console.log(ids);
-  return db.sqlQuery("select i.fullMeta, i.damage, i.id, c.count from item i, lateral (select sum(count) as count from stack where item_id = i.id) c where i.id in (" + ids.join(",") + ");",[]).then((rows) => {
+  return db.sqlQuery("select i.fullMeta, i.damage, i.id, coalesce(c.count,0) as count from item i, lateral (select sum(count) as count from stack where item_id = i.id) c where i.id in (" + ids.join(",") + ");",[]).then((rows) => {
     for(let row of rows) {
       let item = {
         damage: row[1].val as number,
