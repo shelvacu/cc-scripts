@@ -72,7 +72,7 @@ end
 function exports.write(name, data)
   t.start("writeaf "..name)
   t.start("pack "..name)
-  local rawData = {mp.packArr(data)}
+  local packedData = mp.pack(data)
   t.finish()
   local oldName = name .. exports.oldPostfix
   local newName = name .. exports.newPostfix
@@ -80,12 +80,9 @@ function exports.write(name, data)
   t.start("openaf "..name)
   local f = assert(io.open(newName, "wb"))
   t.finish()
-  t.start("write rawData "..name)
-  for _,v in ipairs(rawData) do
-    f:write(v)
-  end
+  t.start("write packedData "..name)
+  f:write(packedData)
   t.finish()
-  --f:write(table.concat(rawData))
   t.start("closeaf "..name)
   f:close()
   t.finish()
