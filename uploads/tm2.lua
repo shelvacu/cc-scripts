@@ -196,6 +196,80 @@ local function makeInventoryNotFull()
   --moveToXZ(oldSpot)
 end
 
+local diggablesArr = {
+  "minecraft:stone",
+  "minecraft:cobblestone",
+  "minecraft:coal_ore",
+  "minecraft:iron_ore",
+  "minecraft:gold_ore",
+  "minecraft:redstone_ore",
+  "minecraft:lapis_lazuli_ore",
+  "minecraft:lapis_ore",
+  "minecraft:diamond_ore",
+  "minecraft:emerald_ore",
+  "minecraft:fence",
+  "minecraft:planks",
+  "minecraft:rail",
+  "minecraft:water",
+  "minecraft:lava",
+  "minecraft:flowing_lava",
+  "minecraft:dirt",
+  "minecraft:gravel",
+  "minecraft:obsidian",
+  "minecraft:monster_egg", -- blocks that spawn endermites
+  "minecraft:torch",
+  "minecraft:end_stone",
+  "minecraft:deepslate",
+  "minecraft:andesite",
+  "minecraft:granite",
+  "minecraft:diorite",
+  "minecraft:marble",
+  "minecraft:sandstone",
+  "minecraft:deepslate",
+  "minecraft:small_amethyst_bud",
+  "minecraft:medium_amethyst_bud",
+  "minecraft:large_amethyst_bud",
+  "minecraft:amethyst_cluster",
+  "minecraft:amethyst_block",
+  "minecraft:budding_amethyst",
+  "minecraft:calcite",
+  "minecraft:cobbled_deepslate",
+  "minecraft:copper_ore",
+  "minecraft:coal_ore",
+  "minecraft:iron_ore",
+  "minecraft:gold_ore",
+  "minecraft:redstone_ore",
+  "minecraft:lapis_lazuli_ore",
+  "minecraft:lapis_ore",
+  "minecraft:diamond_ore",
+  "minecraft:emerald_ore",
+  "minecraft:deepslate_copper_ore",
+  "minecraft:deepslate_coal_ore",
+  "minecraft:deepslate_iron_ore",
+  "minecraft:deepslate_gold_ore",
+  "minecraft:deepslate_redstone_ore",
+  "minecraft:deepslate_lapis_lazuli_ore",
+  "minecraft:deepslate_lapis_ore",
+  "minecraft:deepslate_diamond_ore",
+  "minecraft:deepslate_emerald_ore",
+  "minecraft:dripstone_block",
+  "minecraft:glow_lichen",
+  "minecraft:hanging_roots",
+  "minecraft:raw_iron_block",
+  "minecraft:raw_gold_block",
+  "minecraft:raw_copper_block",
+  "minecraft:moss_block",
+  "minecraft:pointed_dripstone",
+  "minecraft:basalt",
+  "minecraft:tuff",
+}
+
+local diggablesMap = {}
+
+for _,name in ipairs(diggablesArr) do
+  diggablesMap[name] = true
+end
+
 local function doTheDig(dir)
   while true do
     makeInventoryNotFull()
@@ -209,30 +283,7 @@ local function doTheDig(dir)
       --remove the water
     elseif (not suc) or bi.name == "minecraft:lava" or bi.name == "minecraft:flowing_lava" or bi.name == "minecraft:water" or bi.name == "minecraft:flowing_water" then
       break
-    elseif --(not suc) or
-      bi.name == "minecraft:stone" or
-      bi.name == "minecraft:cobblestone" or
-      bi.name == "minecraft:coal_ore" or
-      bi.name == "minecraft:iron_ore" or
-      bi.name == "minecraft:gold_ore" or
-      bi.name == "minecraft:redstone_ore" or
-      bi.name == "minecraft:lapis_lazuli_ore" or
-      bi.name == "minecraft:lapis_ore" or
-      bi.name == "minecraft:diamond_ore" or
-      bi.name == "minecraft:emerald_ore" or
-      bi.name == "minecraft:fence" or
-      bi.name == "minecraft:planks" or
-      bi.name == "minecraft:rail" or
-      bi.name == "minecraft:water" or
-      bi.name == "minecraft:lava" or
-      bi.name == "minecraft:flowing_lava" or
-      bi.name == "minecraft:dirt" or
-      bi.name == "minecraft:gravel" or
-      bi.name == "minecraft:obsidian" or
-      bi.name == "minecraft:monster_egg" or -- blocks that spawn endermites
-      bi.name == "minecraft:torch" or
-      bi.name == "minecraft:end_stone"
-    then
+    elseif diggablesMap[bi.name] then
       turtle[digNames[dir]]()
       starNav.update[dir]()
     elseif bi.name == "minecraft:bedrock" and dir == "down" then
