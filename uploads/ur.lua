@@ -13,7 +13,7 @@ local exists = fs.exists(name)
 if exists then
   shell.run("mv", name, name .. ".old")
 end
-if shell.run("wget", "http://10.244.227.200:8000/"..name, name) then
+if shell.run("wget", "https://github.com/shelvacu/cc-scripts/raw/master/uploads/"..name, name) then
   if exists then
     shell.run("rm", name .. ".old")
   end
