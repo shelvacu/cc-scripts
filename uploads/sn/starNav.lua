@@ -223,7 +223,7 @@ local function move(currPos, adjPos)
 end
 
 function goto(x, y, z, maxDistance, heading)
-  --print("DEBUG: goto " .. x .. " " .. y .. " " .. " " .. z .. " max:" .. (maxDistance or "nil") .. " h:" .. (heading or "nil"))
+	print("DEBUG: goto " .. x .. " " .. y .. " " .. " " .. z .. " max:" .. (maxDistance or "nil") .. " h:" .. (heading or "nil"))
 	if not mainMap then
 		error("mainMap has not been specified")
 	end
