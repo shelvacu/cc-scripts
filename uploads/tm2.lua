@@ -310,8 +310,10 @@ local function doTheMultiDigFwd()
   forward()
 end
 
-print("figure location and facing")
-starNav.goto(gps.locate()) --force starNav to figure out its location and facing
+local location = gps.locate()
+print("telling starnav to go to "..inspect(location))
+starNav.goto(location) --force starNav to figure out its location and facing
+print("figured")
 
 local startX = params.startingPos.x
 local startY = params.startingPos.y
