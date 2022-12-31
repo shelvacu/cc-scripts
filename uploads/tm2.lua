@@ -262,6 +262,9 @@ local diggablesArr = {
   "minecraft:pointed_dripstone",
   "minecraft:basalt",
   "minecraft:tuff",
+
+  "minecraft:oak_fence", --mineshafts
+  "minecraft:oak_planks"
 }
 
 local diggablesMap = {}
