@@ -102,6 +102,7 @@ local function findPosition()
 	end
 	
 	local p2 = {gps.locate()}
+	print("DEBUG: locate gave "..p2[1].." "..p2[2].." "..p2[3])
 	if #p2 == 3 then
 		p2 = vector.new(unpack(p2))
 	else
@@ -227,15 +228,18 @@ function goto(x, y, z, maxDistance, heading)
 	if not mainMap then
 		error("mainMap has not been specified")
 	end
+	print("DEBUG: have mainmap")
 	if turtle.getFuelLevel() == 0 then
 		return false, "ran out of fuel"
 	end
+	print("DEBUG: have fuel")
 	if not position then
 		position = findPosition()
 		if not position then
 			return false, "couldn't determine location"
 		end
 	end
+	print("DEBUG: have position")
 	
 	local goal = vector.new(tonumber(x), tonumber(y), tonumber(z))
 
@@ -248,6 +252,7 @@ function goto(x, y, z, maxDistance, heading)
 		return false, "no known path to goal"
 	end
 	while not aStar.vectorEquals(position, goal) do
+		--print("DEBUG: position is "..position.x..","..position.y..","..position.z.." and goal "..goal.x..","..goal.y..","..goal.z)
 		local movePos = table.remove(path)
 		while not move(position, movePos) do
 			local blockPresent, blockData = inspect(position, movePos)

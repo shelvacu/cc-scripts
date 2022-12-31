@@ -1,3 +1,4 @@
+--v2
 local mp = require"mp"
 
 local Connection = {msgid_inc = 1}
@@ -32,10 +33,17 @@ function Connection:new(url, use_id)
   return conn
 end
 
-function Connection:default()
+function Connection:default(pass)
+  if pass == nil then
+    pass = fs.open("dbpass","r"):readAll()
+  end
+  if string.byte(pass, #pass) == 10 then --if last char is a newline
+    pass = string.sub(pass, 1, #pass - 1) --chop off the newline
+  end
   local this_id = conn_id
   conn_id = conn_id + 1
-  return self:new("ws://10.244.65.57:7648/?"..this_id, this_id)
+  --return self:new("wss://zakxkoyodg.shelvacu.com/?"..this_id, this_id)
+  return self:new("wss://user:"..pass.."@zakxkoyodg.shelvacu.com/?"..this_id, this_id)
 end
 
 function Connection:process()

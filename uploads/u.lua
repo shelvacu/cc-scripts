@@ -12,7 +12,7 @@ for i,v in ipairs({...}) do
   if exists then
     shell.run("mv", name, name .. ".old")
   end
-  if shell.run("wget", "https://github.com/shelvacu/cc-scripts/raw/master/uploads/"..name, name) then
+  if shell.run("wget", "https://cc.shelvacu.com/uploads/"..name, name) then
     if exists then
       shell.run("rm", name .. ".old")
     end

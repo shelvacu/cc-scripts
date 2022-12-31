@@ -197,6 +197,7 @@ local function makeInventoryNotFull()
 end
 
 local diggablesArr = {
+  "minecraft:grass_block",
   "minecraft:stone",
   "minecraft:cobblestone",
   "minecraft:coal_ore",
@@ -218,6 +219,7 @@ local diggablesArr = {
   "minecraft:obsidian",
   "minecraft:monster_egg", -- blocks that spawn endermites
   "minecraft:torch",
+  "minecraft:wall_torch",
   "minecraft:end_stone",
   "minecraft:deepslate",
   "minecraft:andesite",
@@ -251,7 +253,7 @@ local diggablesArr = {
   "minecraft:deepslate_lapis_lazuli_ore",
   "minecraft:deepslate_lapis_ore",
   "minecraft:deepslate_diamond_ore",
-  "minecraft:deepslate_emerald_ore",
+  --"minecraft:deepslate_emerald_ore", --one of the rarest blocks, reserve for a silk touch
   "minecraft:dripstone_block",
   "minecraft:glow_lichen",
   "minecraft:hanging_roots",
