@@ -1,4 +1,4 @@
---thorough miner v0.1 by shelvacu
+--thorough miner v0.2 by shelvacu
 
 --require"shellib"
 function die(msg)
@@ -310,9 +310,9 @@ local function doTheMultiDigFwd()
   forward()
 end
 
-local location = gps.locate()
+local location = {gps.locate()}
 print("telling starnav to go to "..inspect(location))
-starNav.goto(location) --force starNav to figure out its location and facing
+starNav.goto(location[1], location[2], location[3]) --force starNav to figure out its location and facing
 print("figured")
 
 local startX = params.startingPos.x
