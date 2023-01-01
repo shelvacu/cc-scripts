@@ -1,0 +1,1 @@
+alter table stack add column reserved_for int references job(id);
